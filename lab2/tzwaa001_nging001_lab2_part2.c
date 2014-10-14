@@ -1,12 +1,11 @@
-/* Partner 1 Name & E­mail: Thomas Zwaagstra <tzwaa001@ucr.edu>
- * Partner 2 Name & E­mail:
- * Lab Section: Switzerland
- * Assignment: Lab 9 Part 4
- * 
- *
- * I acknowledge all content contained herein, excluding 
- * template or example code, is my own original work.
- */
+/*  Thomas Zwaagstra <tzwaa001@ucr.edu>
+*   Nick Gingerella <nging001@ucr.edu>
+*   Lab section: 22
+*   Lab 2 Part 2
+*
+*   I acknowledge all content contained herein, excluding template or example code,
+*   is my own original work.
+*/
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
