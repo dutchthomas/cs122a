@@ -64,6 +64,21 @@ void A2D_init() {
 
 }
 
+// Pins on PORTA are used as input for A2D conversion
+//    The default channel is 0 (PA0)
+// The value of pinNum determines the pin on PORTA
+//    used for A2D conversion
+// Valid values range between 0 and 7, where the value
+//    represents the desired pin for A2D conversion
+		
+void Set_A2D_Pin(unsigned char pinNum)
+{
+    ADMUX = (pinNum <= 0x07) ? pinNum : ADMUX;
+    // Allow channel to stabilize
+    static unsigned char i = 0;
+    for ( i=0; i<15; i++ ) { asm("nop"); } 
+}
+
 enum state_labels
 {
 INIT,
@@ -72,7 +87,7 @@ PRESS,
 RELEASE,
 REACT
 }
-task1_state, task2_state;
+task1_state, task2_stateA, task2_stateB, task3_state;
 
 char field[5][8] =
 {
@@ -83,11 +98,11 @@ char field[5][8] =
 {0,0,0,0,0,0,0,0}
 };
 
-unsigned char b0, b1, row;
+unsigned char b0, b1, row, col;
 
 unsigned char c0, c1;
 
-unsigned short divider, min, max;
+unsigned short divider, min, max, input0, input1;
 
 void Task1()
 {
@@ -117,109 +132,101 @@ void Task1()
             // which column
             transmit_data(t1, 1);
             
-            vTaskDelay(2);
 
+            vTaskDelay(1);
 
         }
+        
     }
 
 }
 
-void Task2()
+void controlTick(unsigned short *r, unsigned short *t0, signed char *dir, unsigned char *c, int *task_state, unsigned char *pos, unsigned short *input, int range)
 {
-    int i, j;
-    
-    unsigned short r, t0;
-    
-    signed char dir;
-
-    while(1)
-    {
-    
         // Actions
-        switch(task2_state)
+        switch(*task_state)
         {
             case INIT:
-                row = 0;
-                c0 = 0;
+                *pos = 0;
+                *c = 0;
                 min = 0;
                 max = 1024;
-                dir = 0;
+                *dir = 0;
                 
                 divider = (max - min)/9;
             break;
             
             case WAIT:
-                r = ADC / divider;
+                *r = *input / divider;
                
-                if(r < 4)
+                if(*r < 4)
                 {
-                    r = 4 - r;
-                    dir = -1;
+                    *r = 4 - *r;
+                    *dir = -1;
                 }
-                else if(r == 4)
+                else if(*r == 4)
                 {
-                    r = 0;
-                    dir = 0;
+                    *r = 0;
+                    *dir = 0;
                 }
-                else if (r > 4)
+                else if (*r > 4)
                 {
-                    r = r - 4;
-                    dir = 1;
+                    *r = *r - 4;
+                    *dir = 1;
                 }
                 
-                switch(r)
+                switch(*r)
                 {
                     case 0:
-                        t0 = 0;
+                        *t0 = 0;
                     break;
                     
                     case 1:
-                        t0 = 20;
+                        *t0 = 20;
                     break;
                     
                     case 2:
-                        t0 = 10;
+                        *t0 = 10;
                     break;
                     
                     case 3:
-                        t0 = 5;
+                        *t0 = 5;
                     break;
                     
                     case 4:
-                        t0 = 2;
+                        *t0 = 2;
                     break;
                 }
                 
-                c0++;
+                (*c)++;
                 
             break;
             
             case REACT:
-                if(dir > 0)
+                if(*dir > 0)
                 {
-                    if(row > 0)
+                    if(*pos > 0)
                     {
-                        row--;
+                        (*pos)--;
                     }
                     else
                     {
-                        row = 7;
+                        *pos = range;
                     }
                 }
-                else if(dir < 0)
+                else if(*dir < 0)
                 {
-                    if(row < 7)
+                    if(*pos < range)
                     {
-                        row++;
+                        (*pos)++;
                     }
                     else
                     {
-                        row = 0;
+                        *pos = 0;
                     }
                 }
             
-                c0 = 1;
+                *c = 1;
             break;
             
             default:
@@ -227,26 +234,42 @@ void Task2()
         }
         
         // Transitions
-        switch(task2_state)
+        switch(*task_state)
         {
             case INIT:
-                task2_state = WAIT;
+                *task_state = WAIT;
             break;
             
             case WAIT:
-                if(c0 > t0)
+                if(*c > *t0)
                 {
-                    task2_state = REACT;
+                    *task_state = REACT;
                 }
             break;
             
             case REACT:
-                task2_state = WAIT;
+                *task_state = WAIT;
             break;
             
             default:
             break;
         }
+
+}
+
+void Task2()
+{
+    int i, j;
+    
+    unsigned short r0, r1, t0, t1;
+    
+    signed char dir0, dir1;
+
+    while(1)
+    {
+        controlTick(&r0, &t0, &dir0, &c0, &task2_stateA, &row, &input0, 8);
+        
+        controlTick(&r1, &t1, &dir1, &c1, &task2_stateB, &col, &input1, 5);
         
         // Write field
         
@@ -254,7 +277,7 @@ void Task2()
         {
             for(j = 0; j < 5; j++)
             {
-                if(i == row && j == 1)
+                if(i == row && j == col)
                 {
                     field[j][i] = 1;
                 }
@@ -267,6 +290,19 @@ void Task2()
         }
         
         vTaskDelay(50);
+    }
+}
+
+void Task3()
+{
+    while(1)
+    {
+        Set_A2D_Pin(0);
+        vTaskDelay(5);
+        input0 = ADC;
+        Set_A2D_Pin(1);
+        vTaskDelay(5);
+        input1 = ADC;
     }
 }
 
@@ -283,10 +319,13 @@ int main(void)
     transmit_data(0xFF, 1);
    
     task1_state = INIT;
-    task2_state = INIT;
+    task2_stateA = INIT;
+    task2_stateB = INIT;
+    task3_state = INIT;
   
     xTaskCreate(Task1, (signed portCHAR *)"Task1", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
     xTaskCreate(Task2, (signed portCHAR *)"Task2", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+    xTaskCreate(Task3, (signed portCHAR *)"Task3", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
  
     vTaskStartScheduler();
     

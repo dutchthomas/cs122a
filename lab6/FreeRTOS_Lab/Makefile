@@ -16,6 +16,10 @@ P3: p3.c
 	
 P4: p4.c
 	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p4.c -o main.elf
+
+P5: p5.c
+	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p5.c -o main.elf
+
 	
 flash: main.elf
 	avrdude -p atmega1284p -F -U flash:w:main.elf:e -c avrispmkII
