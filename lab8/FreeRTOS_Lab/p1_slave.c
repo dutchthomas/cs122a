@@ -26,12 +26,29 @@
 
 #include "usart_ATmega1284.h"
 
+
+// SPI stuff
+char hasData = 0;
+unsigned char data; 
+
 // Master code
 void SPI_MasterInit(void) {
 	// Set DDRB to have MOSI, SCK, and SS as output and MISO as input
 	// Set SPCR register to enable SPI, enable master, and use SCK frequency
 //   of fosc/16  (pg. 168)
 	// Make sure global interrupts are enabled on SREG register (pg. 9)
+	
+	// Set MOSI, SCK as Output
+    DDRB=(1<<5)|(1<<3);
+ 
+    // Enable SPI, Set as Master
+    // Prescaler: Fosc/16, Enable Interrupts
+    //The MOSI, SCK pins are as per ATMega8
+    SPCR=(1<<SPE)|(1<<MSTR)|(1<<SPR0)|(1<<SPIE);
+ 
+    // Enable Global Interrupts
+    sei();
+	
 }
 
 void SPI_MasterTransmit(unsigned char cData) {
@@ -43,18 +60,32 @@ void SPI_MasterTransmit(unsigned char cData) {
 // set SS high
 }
 
-// Servant code
+// Servant code 4F B0 C0
 void SPI_ServantInit(void) {
-	// set DDRB to have MISO line as output and MOSI, SCK, and SS as input
-	// set SPCR register to enable SPI and enable SPI interrupt (pg. 168)
-	// make sure global interrupts are enabled on SREG register (pg. 9)
+
+
+DDRB = 0x4F; PORTB = 0xB0;
+
+SPCR = 0xC0;
+
+SREG |= 0x80;
+	
+	
 }
 
 ISR(SPI_STC_vect) { // this is enabled in with the SPCR register’s “SPI
   // Interrupt Enable”
 	// SPDR contains the received data, e.g. unsigned char receivedData =
 // SPDR;
+
+    if(hasData == 0)
+    {
+        data = SPDR;
+        hasData = 1;
+    }
+
 }
+
 
 
 enum state_labels
@@ -88,19 +119,15 @@ void Task1()
         switch(task1_state)
         {
             case INIT:
-                leds = 0;
-                i = 0;
-                p = 3;
+                SPI_ServantInit();
             break;
             
             case WAIT:
-                // Nothing to see here...
-            break;
-            
-            case PLAY:
-                leds = pattern[p][i+1];
-                i = (i + 1) % (pattern[p][0]);
-                PORTA = leds;
+                if(hasData)
+                {
+                    PORTA = data;
+                    hasData = 0;
+                }
             break;
             
             default:
@@ -114,11 +141,7 @@ void Task1()
                 task1_state = WAIT;
             break;
             case WAIT:
-                task1_state = PLAY;
-            break;
-            
-            case PLAY:
-
+                // stay here
             break;
             
             default:
@@ -127,7 +150,7 @@ void Task1()
 
         
     
-        vTaskDelay(100);
+        vTaskDelay(5);
     }
 
 }
@@ -137,7 +160,6 @@ int main(void)
     DDRA = 0xFF;// PORTA=0xFF;
     DDRC = 0xFF;
     DDRB = 0x00; PORTB=0xFF;
-    
    
     task1_state = INIT;
     task2_state = INIT;

@@ -5,8 +5,18 @@ KILLWARN=-w -O0
 main: main.c
 	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c main.c -o main.elf
 	
-P1: p1.c
-	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p1.c -o main.elf
+P1M: p1_master.c
+	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p1_master.c -o main.elf
+
+P1S: p1_slave.c
+	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p1_slave.c -o main.elf
+
+P2M: p2_master.c
+	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p2_master.c -o main.elf
+
+P2S: p2_slave.c
+	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p2_slave.c -o main.elf
+
 	
 P2: p2.c
 	avr-gcc -mmcu=atmega1284p ${INCLUDES} ${KILLWARN} croutine.c heap_1.c list.c port.c queue.c tasks.c timers.c p2.c -o main.elf

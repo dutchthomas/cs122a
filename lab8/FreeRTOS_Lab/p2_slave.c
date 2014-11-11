@@ -26,40 +26,76 @@
 
 #include "usart_ATmega1284.h"
 
+////////////////////////////////////////////////////////////////////////////////
+
+#ifndef BIT_H
+#define BIT_H
+
+////////////////////////////////////////////////////////////////////////////////
+//Functionality - Sets bit on a PORTx
+//Parameter: Takes in a uChar for a PORTx, the pin number and the binary value 
+//Returns: The new value of the PORTx
+unsigned char SetBit(unsigned char pin, unsigned char number, unsigned char bin_value) 
+{
+	return (bin_value ? pin | (0x01 << number) : pin & ~(0x01 << number));
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//Functionality - Gets bit from a PINx
+//Parameter: Takes in a uChar for a PINx and the pin number
+//Returns: The value of the PINx
+unsigned char GetBit(unsigned char port, unsigned char number) 
+{
+	return ( port & (0x01 << number) );
+}
+
+#endif //BIT_H
+
+
 // SPI stuff
 char hasData = 0;
 unsigned char data; 
 
+//========================== SPI specific functons =============================
 // Master code
+
 void SPI_MasterInit(void) {
 	// Set DDRB to have MOSI, SCK, and SS as output and MISO as input
+	 DDRB |= (1 << DDB4) | (1 << DDB5) | (1 << DDB7);
+	 DDRB &= ~(1 << DDB6);
 	// Set SPCR register to enable SPI, enable master, and use SCK frequency
-//   of fosc/16  (pg. 168)
+	// of fosc/16  (pg. 168)
+	SPCR = (1 << SPE) | (1 << MSTR) | (1 << SPR0);
+	
 	// Make sure global interrupts are enabled on SREG register (pg. 9)
+	SREG |= 0x80;
 }
 
+
+// Transmit data from the master to the  slave using the SPi Data Register
 void SPI_MasterTransmit(unsigned char cData) {
-// data in SPDR will be transmitted, e.g. SPDR = cData;
+
 	// set SS low
-	while(!(SPSR & (1<<SPIF))) { // wait for transmission to complete
+	PORTB = SetBit(PORTB,4,0);
+
+	// data in SPDR will be transmitted, e.g. SPDR = cData;
+	SPDR = cData;
+
+	// wait for transmission to complete
+	while(!(SPSR & (1<<SPIF))) { 
 		;
 	}
-// set SS high
-}
 
-// Servant code
+	// set SS high
+	PORTB = SetBit(PORTB,4,1);
+}
+//=============================================================================
+
+// Servant code 4F B0 C0
 void SPI_ServantInit(void) {
-	// set DDRB to have MISO(PB6) line as output and MOSI(PB5), SCK(PB7), and SS(PB4) as input
-	DDRB |= 0x40; //01000000;
-	DDRB &= 0x4F; //01001111;
-	
-	// set SPCR register to enable SPI and enable SPI interrupt (pg. 168)
-	SPCR |= SPIE | SPE;
-	
-	// make sure global interrupts are enabled on SREG register (pg. 9)
-	SREG |= 0x80;
-	
-	
+DDRB = 0x4F; PORTB = 0xB0;
+SPCR = 0xC0;
+SREG |= 0x80;
 }
 
 ISR(SPI_STC_vect) { // this is enabled in with the SPCR register’s “SPI
@@ -75,7 +111,6 @@ ISR(SPI_STC_vect) { // this is enabled in with the SPCR register’s “SPI
 
 }
 
-
 enum state_labels
 {
 INIT,
@@ -85,18 +120,20 @@ PLAY
 }
 task1_state, task2_state;
 
-const char pattern[4][9] = 
+const char pattern[4][16] = 
 {
 {2, 0xF0, 0x0F},
 {2, 0xAA, 0x55},
-{8, 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01},
+{14, 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40},
 {4, 0x81, 0x42, 0x24, 0x18}
 };
+
+const unsigned char rates[6] = {40, 20, 10, 5, 2, 1};
 
 // Number of patterns
 const char num = 4;
 
-char leds, i, p, count, rate, run;
+char leds, i, p, count, rate, run, old;
 
 // Pattern flasher
 void Task1()
@@ -111,25 +148,14 @@ void Task1()
 
             break;
             
-            case SET:
-                leds = 0;
-                i = 0;
-                p = 3;
-                rate = 5;
-                count = 0;
-            break;
-            
             case WAIT:
                 // Nothing to see here...
             break;
             
             case PLAY:
-                if(run)
-                {
                     leds = pattern[p][i+1];
                     i = (i + 1) % (pattern[p][0]);
                     PORTA = leds;
-                }
             break;
             
             default:
@@ -140,27 +166,15 @@ void Task1()
         switch(task1_state)
         {
             case INIT:
-                if(run)
-                {
-                    task1_state = SET;
-                }
-            break;
-            
-            case SET:
-                run = 1;
                 task1_state = WAIT;
             break;
             
             case WAIT:
-                if(!run)
-                {
-                    task1_state = SET;
-                }
             
                 if(count >= rate)
                 {
                     task1_state = PLAY;
-                    count = 0;
+                    count = 1;
             	}
             	else
             	{
@@ -169,10 +183,6 @@ void Task1()
             break;
             
             case PLAY:
-                if(!run)
-                {
-                    task1_state = SET;
-                }
             
                 task1_state = WAIT;
             break;
@@ -196,8 +206,8 @@ void Task2()
         switch(task2_state)
         {
             case INIT:
-                run = 0;
-            
+                rate = rates[0];
+                p = 0;
             break;
             
             case WAIT:
@@ -217,16 +227,24 @@ void Task2()
             
             case WAIT:
                 
-                /*
-                    if(receive)
+                
+                    if(hasData)
                     {
+                        if(data != old)
+                        {
+                            //i = 0;
+                            p = (data >> 4)-1;
+                            
+                            
+                            rate = rates[(data & 0x0F)-1];
+                            count = 1;
+                            old = data;
+                        }
                         
-                        p = data >> 4;
-                        rate = (data & 0x0F);
-                        run = 0;
+                        hasData = 0;
                     }
                 
-                */
+                
             break;
         
             default:
@@ -235,7 +253,7 @@ void Task2()
     
     }
     
-    vTaskDelay(10);
+    vTaskDelay(100);
 
 }
 

@@ -1,7 +1,7 @@
 /*  Thomas Zwaagstra <tzwaa001@ucr.edu>
 *   Nick Gingerella <nging001@ucr.edu>
 *   Lab section: 22
-*   Lab 6 Part 1
+*   Lab 8 Part 1
 *
 *   I acknowledge all content contained herein, excluding template or example code,
 *   is my own original work.
@@ -104,51 +104,52 @@ ISR(SPI_STC_vect) { // this is enabled in with the SPCR register’s “SPI
 
 }
 
+
 enum state_labels
 {
 INIT,
-MASTER,
-SLAVE
+WAIT,
+SET,
+PLAY
 }
 task1_state, task2_state;
 
-unsigned char led0, s0;
+const char pattern[4][16] = 
+{
+{2, 0xF0, 0x0F},
+{2, 0xAA, 0x55},
+{14, 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40},
+{4, 0x81, 0x42, 0x24, 0x18}
+};
 
+const unsigned char rates[5] = {40, 20, 10, 5, 2, 1};
+
+// Number of patterns
+const char num = 4;
+
+char leds, i, p, count, rate, run, old;
+
+// Pattern flasher
 void Task1()
 {
     while(1)
     {
-        // Input
-        s0 = !(PINB & 0x01);
         
         // Actions
         switch(task1_state)
         {
             case INIT:
-                initUSART(0);
-                initUSART(1);
+
             break;
             
-            case MASTER:
-            
-                if(USART_IsSendReady(1))
-                {
-                    USART_Send(led0, 1);
-                }
-                
-                PORTA = led0;
-            
+            case WAIT:
+                // Nothing to see here...
             break;
             
-            case SLAVE:
-                if(USART_HasReceived(0))
-                {
-                    led0 = USART_Receive(0);
-                    USART_Flush(0);
-                }
-                
-                PORTA = led0;
-            
+            case PLAY:
+                    leds = pattern[p][i+1];
+                    i = (i + 1) % (pattern[p][0]);
+                    PORTA = leds;
             break;
             
             default:
@@ -159,26 +160,37 @@ void Task1()
         switch(task1_state)
         {
             case INIT:
-                task1_state = s0 ? MASTER : SLAVE;
+                task1_state = WAIT;
             break;
             
-            case MASTER:
-                task1_state = s0 ? MASTER : SLAVE;
+            case WAIT:
+            
+                if(count >= rate)
+                {
+                    task1_state = PLAY;
+                    count = 0;
+            	}
+            	else
+            	{
+            	    count++;
+            	}
             break;
             
-            case SLAVE:
-                task1_state = s0 ? MASTER : SLAVE;
+            case PLAY:
+            
+                task1_state = WAIT;
             break;
             
             default:
             break;
         }
-        
     
-        vTaskDelay(10);
+        vTaskDelay(50);
     }
 
 }
+
+// Selector task
 
 void Task2()
 {
@@ -188,18 +200,13 @@ void Task2()
         switch(task2_state)
         {
             case INIT:
-                led0 = 0x01;
-            break;
-            
-            case MASTER:
-                led0 = !led0;
             
             break;
             
-            case SLAVE:
-                // Do nothing... wait!
+            case WAIT:
+                
             break;
-            
+        
             default:
             break;
         }
@@ -208,34 +215,46 @@ void Task2()
         switch(task2_state)
         {
             case INIT:
-                task2_state = s0 ? MASTER : SLAVE;
+                task2_state = WAIT;
             break;
             
-            case MASTER:
-                task2_state = s0 ? MASTER : SLAVE;
+            case WAIT:
+                
+                
+                    if(hasData)
+                    {
+                        if(data != old)
+                        {
+                            //i = 0;
+                            p = (data >> 4)-1;
+                            
+                            
+                            rate = rates[(data & 0x0F)-2];
+                            count = 0;
+                            old = data;
+                        }
+                        
+                        hasData = 0;
+                    }
+                
+                
             break;
-            
-            case SLAVE:
-                task2_state = s0 ? MASTER : SLAVE;
-            break;
-            
+        
             default:
             break;
         }
     
-        
-        
-        vTaskDelay(1000);
     }
+    
+    vTaskDelay(100);
+
 }
 
 int main(void) 
 { 
-    DDRA = 0xFF;// PORTA=0xFF;
-    DDRC = 0xFF;
-    DDRB = 0x00; PORTB=0xFF;
+    DDRA = 0xFF;
     
-    led0 = 0x01;
+    SPI_ServantInit();
    
     task1_state = INIT;
     task2_state = INIT;
