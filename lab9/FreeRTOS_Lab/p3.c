@@ -29,13 +29,77 @@
 #include "croutine.h" 
 
 //========= shared variables ==========
-unsigned char keypadInput = 0;	//holds ascii value from keypad
-unsigned char currentState = 0;	//DEBUG: holds current state
+unsigned char currentState = 0;	// DEBUG: current state
 
-int num_steps = 0;
+unsigned char keypadInput = 0;	// ascii value from keypad
+unsigned short degree = 0;		// degree entered by user
+int num_steps = 0;				// number of steps for stepper motor rotation
+unsigned char direction = 0;
+unsigned char startMotor = 0;
 //========= shared variables ==========
 
-enum exactPosition_states
+
+void motorControlTask()
+{
+	const unsigned char signals[8] =  { 0x01, 0x03, 0x02, 0x06, 0x04, 0x0C, 0x08, 0x09 };
+	static unsigned char sigs;
+	static int num = 8;
+	static int i = 0;
+	static unsigned char run = 0;
+
+    while(1)
+    {
+
+            sigs = signals[i];
+
+			if(startMotor){
+				direction = 1;	//stepper motor ON
+			} else {
+				direction = 0;	//stepper motor OFF
+			}
+
+            if(direction == 1) // clockwise
+            {
+                i = (i + 1) % num;
+            }
+            else if(direction == 2) // counter clockwise
+            {
+                i = i ? i-1 : (num-1);
+            }
+            else // do not move;
+            {
+                i = 0;
+            }
+            
+            if(direction)
+            {
+                PORTC = 0xF0 | (sigs & 0x0F);
+                
+                if(num_steps > 0)
+                {
+                    num_steps--;
+                } else {
+					startMotor = 0; //after done with rotation, stop moving
+				}
+            }
+        
+        vTaskDelay(3);    
+
+    }
+
+}
+
+
+
+
+//================== motorAngleControl sm =====================
+// Description:
+// Process 4 inputs from keypad. User enters a number in the range 0-999
+// on the keypad, followed by the # symbol, and stores that number in a
+// shared variable that can be used by a stepper motor. Ignores any 
+// button presses that are not digits 0-9 or #.
+
+enum motorAngleControl_states
 {
 btn1Wait,
 btn1Release,
@@ -47,9 +111,9 @@ btn4Wait,
 btn4Release,
 setRotation,
 noPoundRelease
-} exactPosition_state;
+} motorAngleControl_state;
 
-void exactPositionTask()
+void motorAngleControlTask()
 {
 	static unsigned char rotationValue[4] = {'\0','\0','\0','\0'};	//array holds user input that determines angle
 
@@ -57,7 +121,7 @@ void exactPositionTask()
     {
         
         // Actions
-        switch(exactPosition_state)
+        switch(motorAngleControl_state)
         {
             case btn1Wait:
 				currentState = 1;	//DEBUG
@@ -119,7 +183,9 @@ void exactPositionTask()
 				currentState = 9;	//DEBUG
 
 				//start here
-				num_steps = atoi(rotationValue);	//convert entered values into a shared integer variable
+				degree = atoi(rotationValue);		//convert entered values into a shared integer variable
+				num_steps = (degree * 64 / 5.625);	//value for stepper motor control
+				startMotor = 1;
             break;
 
 			case noPoundRelease:
@@ -136,66 +202,66 @@ void exactPositionTask()
 
         
         // Transitions
-        switch(exactPosition_state)
+        switch(motorAngleControl_state)
         {
             case btn1Wait:
 				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
 					rotationValue[0] = keypadInput;
-					exactPosition_state = btn1Release;
+					motorAngleControl_state = btn1Release;
 				} else {
-					exactPosition_state = btn1Wait;
+					motorAngleControl_state = btn1Wait;
 				}
             break;
 
 			case btn1Release:
 				if(keypadInput != '\0'){
-					exactPosition_state = btn1Release;	
+					motorAngleControl_state = btn1Release;	
 				} else {
-					exactPosition_state = btn2Wait;
+					motorAngleControl_state = btn2Wait;
 				}
             break;
 
 			case btn2Wait:
 				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
 					rotationValue[1] = keypadInput;
-					exactPosition_state = btn2Release;
+					motorAngleControl_state = btn2Release;
 				} 
 				else if(keypadInput == '#'){
 					rotationValue[1] = '#';
-					exactPosition_state = btn4Release;
+					motorAngleControl_state = btn4Release;
 				}
 				else {
-					exactPosition_state = btn2Wait;
+					motorAngleControl_state = btn2Wait;
 				}
             break;
 
 			case btn2Release:
 				if(keypadInput != '\0'){
-					exactPosition_state = btn2Release;	
+					motorAngleControl_state = btn2Release;	
 				} else {
-					exactPosition_state = btn3Wait;
+					motorAngleControl_state = btn3Wait;
 				}
             break;
 
 			case btn3Wait:
 				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
 					rotationValue[2] = keypadInput;
-					exactPosition_state = btn3Release;
+					motorAngleControl_state = btn3Release;
 				} 
 				else if(keypadInput == '#'){
 					rotationValue[2] = '#';
-					exactPosition_state = btn4Release;
+					motorAngleControl_state = btn4Release;
 				}
 				else {
-					exactPosition_state = btn3Wait;
+					motorAngleControl_state = btn3Wait;
 				}
             break;
 
 			case btn3Release:
 				if(keypadInput != '\0'){
-					exactPosition_state = btn3Release;	
+					motorAngleControl_state = btn3Release;	
 				} else {
-					exactPosition_state = btn4Wait;
+					motorAngleControl_state = btn4Wait;
 				}
             break;
 
@@ -210,22 +276,22 @@ void exactPositionTask()
 					rotationValue[2] = '\0';
 					rotationValue[3] = '\0';
 
-					exactPosition_state = noPoundRelease;
+					motorAngleControl_state = noPoundRelease;
 				} 
 				else if(keypadInput == '#'){
 					rotationValue[3] = '#';
-					exactPosition_state = btn4Release;
+					motorAngleControl_state = btn4Release;
 				}
 				else {
-					exactPosition_state = btn4Wait;
+					motorAngleControl_state = btn4Wait;
 				}
             break;
 
 			case btn4Release:
 				if(keypadInput != '\0'){
-					exactPosition_state = btn4Release;	
+					motorAngleControl_state = btn4Release;	
 				} else {
-					exactPosition_state = setRotation;
+					motorAngleControl_state = setRotation;
 				}
             break;
 
@@ -236,14 +302,14 @@ void exactPositionTask()
 				rotationValue[2] = '\0';
 				rotationValue[3] = '\0';
 
-				exactPosition_state = btn1Wait;
+				motorAngleControl_state = btn1Wait;
             break;
 
 			case noPoundRelease:
 				if(keypadInput != '\0'){
-					exactPosition_state = noPoundRelease;	
+					motorAngleControl_state = noPoundRelease;	
 				} else {
-					exactPosition_state = btn1Wait;
+					motorAngleControl_state = btn1Wait;
 				}				
             break;
 
@@ -313,7 +379,7 @@ void inputTask(){
 				break;
 		}
 
-		vTaskDelay(50);
+		vTaskDelay(20);
 	}
 }
 //====================== input machine ==========================
@@ -323,17 +389,19 @@ void inputTask(){
 int main(void) 
 { 
 	//initialize input and output ports
-    DDRA = 0xFF; PORTA=0x00; //DDRA=1111 1111   PORTA=0000 0000
-	DDRD = 0x0F; PORTD=0xF0; //DDRD=0000 1111   PORTD=1111 0000
+    DDRA = 0xFF; PORTA = 0x00; //DDRA=1111 1111   PORTA=0000 0000
+    DDRC = 0x0F; PORTC = 0xF0; //DDRC=0000 1111   PORTD=1111 0000
+	DDRD = 0x0F; PORTD = 0xF0; //DDRD=0000 1111   PORTD=1111 0000
 
 	//set state machines to initial states
     outputTask_state = output;
     inputTask_state = input;
-	exactPosition_state = btn1Wait;
+	motorAngleControl_state = btn1Wait;
       
 	//create tasks
     xTaskCreate(inputTask, (signed portCHAR *)"inputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
-	xTaskCreate(exactPositionTask, (signed portCHAR *)"exactPositionTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate(motorAngleControlTask, (signed portCHAR *)"motorAngleControlTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate(motorControlTask, (signed portCHAR *)"motorControlTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
     xTaskCreate(outputTask, (signed portCHAR *)"outputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
  
 	//run machines
