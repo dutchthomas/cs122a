@@ -1,7 +1,7 @@
 /*  Thomas Zwaagstra <tzwaa001@ucr.edu>
 *   Nick Gingerella <nging001@ucr.edu>
 *   Lab section: 22
-*   Lab 5 Part 4
+*   Lab 8 Part 4
 *
 *   I acknowledge all content contained herein, excluding template or example code,
 *   is my own original work.
@@ -19,323 +19,440 @@
 #include <avr/portpins.h> 
 #include <avr/pgmspace.h> 
  
+//CS122A Resource Headers
+#include "bit.h"
+#include "keypad.h"
+
 //FreeRTOS include files 
 #include "FreeRTOS.h" 
 #include "task.h" 
 #include "croutine.h" 
 
-void transmit_data(unsigned char data, unsigned char line);
+//========= shared variables ==========
+unsigned char currentState = 0;	// DEBUG: current state
 
-void transmit_data(unsigned char data, unsigned char line)
+unsigned char keypadInput = 0;	// ascii value from keypad
+unsigned short degree = 0;		// degree entered by user
+int num_steps = 0;				// number of steps for stepper motor rotation
+unsigned char direction = 1;	//default to clockwise
+unsigned char startMotor = 0;
+//========= shared variables ==========
+
+
+void motorControlTask()
 {
-	int i;
-	
-	for(i = 7; i >= 0; --i)
-	{
-	    // Sets SRCLR to 1 to allow data to be set
-	    // clears SRCLK in preparation of sending data
-	    if(line == 0)
-	    {
-		    PORTC = 0x08;
-	    }
-	    else if(line == 1)
-	    {
-		    PORTC = 0x20;
-	    }
-		
-		// set SER = next bit of data to be sent
-		PORTC |= ((data >> i) & 0x01);
-		
-		// set SRCLK = 1. Rising edge shifts next bit of data into the shift register.
-		PORTC |= 0x04;
-	}
-	
-	// set RCLK = 1. Rising edge copies data from "shift" to "storage"
-	if(line == 0)
-	{
-	    PORTC |= 0x02;
-    }
-    else if(line == 1)
-    {
-	    PORTC |= 0x10;
-    }
-	
-	// clears all lines for new transmission
-	PORTC = 0x00;
-}
-
-void A2D_init() {
-      ADCSRA |= (1 << ADEN) | (1 << ADSC) | (1 << ADATE);
-    // ADEN: Enables analog-to-digital conversion
-	// ADSC: Starts analog-to-digital conversion
-	// ADATE: Enables auto-triggering, allowing for constant
-	//	    analog to digital conversions.
-
-}
-
-// Pins on PORTA are used as input for A2D conversion
-//    The default channel is 0 (PA0)
-// The value of pinNum determines the pin on PORTA
-//    used for A2D conversion
-// Valid values range between 0 and 7, where the value
-//    represents the desired pin for A2D conversion
-		
-void Set_A2D_Pin(unsigned char pinNum)
-{
-    ADMUX = (pinNum <= 0x07) ? pinNum : ADMUX;
-    // Allow channel to stabilize
-    static unsigned char i = 0;
-    for ( i=0; i<15; i++ ) { asm("nop"); } 
-}
-
-enum state_labels
-{
-INIT,
-WAIT,
-PRESS,
-RELEASE,
-REACT
-}
-task1_state, task2_stateA, task2_stateB, task3_state;
-
-char field[5][8] =
-{
-{0,0,0,0,0,0,0,0},
-{0,0,0,0,0,0,0,0},
-{0,0,0,0,0,0,0,0},
-{0,0,0,0,0,0,0,0},
-{0,0,0,0,0,0,0,0}
-};
-
-unsigned char b0, b1, row, col;
-
-unsigned char c0, c1;
-
-unsigned short divider, min, max, input0, input1;
-
-void Task1()
-{
-    int i, j;
-    unsigned char t1, t2;
+	const unsigned char signals[8] =  { 0x01, 0x03, 0x02, 0x06, 0x04, 0x0C, 0x08, 0x09 };
+	static unsigned char sigs;
+	static int num = 8;
+	static int i = 0;
+	static unsigned char run = 0;
 
     while(1)
     {
-        for(i = 0; i < 8; i++)
-        {
-            t1 =  (0x01 << i);
-            
-            // Disable column
-            transmit_data(0, 1);
-        
-            // which rows
-            
-            t2 = 0;
-            
-            for(j = 0; j < 5; j++)
+
+            sigs = signals[i];
+
+            if(direction == 1) // clockwise
             {
-                t2 |= field[4-j][7-i] << j;
+                i = (i + 1) % num;
+            }
+            else if(direction == 2) // counter clockwise
+            {
+                i = i ? i-1 : (num-1);
+            }
+            else // do not move;
+            {
+                i = 0;
             }
             
-            transmit_data(~(t2), 0);
-            
-            // which column
-            transmit_data(t1, 1);
-            
-
-            vTaskDelay(1);
-
-        }
+            if(direction && startMotor)
+            {
+                PORTC = 0xF0 | (sigs & 0x0F);
+                
+                if(num_steps > 0)
+                {
+                    num_steps--;
+                } else {
+					startMotor = 0; //after done with rotation, stop moving
+				}
+            }
         
+        vTaskDelay(3);    
+
     }
 
 }
 
-void controlTick(unsigned short *r, unsigned short *t0, signed char *dir, unsigned char *c, int *task_state, unsigned char *pos, unsigned short *input, int range)
+
+
+
+//================== motorAngleControl sm =====================
+// Description:
+// Process 4 inputs from keypad. User enters a number in the range 0-999
+// on the keypad, followed by the # symbol, and stores that number in a
+// shared variable that can be used by a stepper motor. Ignores any 
+// button presses that are not digits 0-9 or #.
+
+enum motorAngleControl_states
 {
+btn1Wait,
+btn1Release,
+btn2Wait,
+btn2Release,
+btn3Wait,
+btn3Release,
+btn4Wait,
+btn4Release,
+setRotation,
+noPoundRelease
+} motorAngleControl_state;
+
+void motorAngleControlTask()
+{
+	static unsigned char rotationValue[4] = {'\0','\0','\0','\0'};	//array holds user input that determines angle
+
+    while(1)
+    {
+        
         // Actions
-        switch(*task_state)
+        switch(motorAngleControl_state)
         {
-            case INIT:
-                *pos = 0;
-                *c = 0;
-                min = 0;
-                max = 1024;
-                *dir = 0;
-                
-                divider = (max - min)/9;
+            case btn1Wait:
+				currentState = 1;	//DEBUG
+
+				//start here
+				
             break;
-            
-            case WAIT:
-                *r = *input / divider;
-               
-                if(*r < 4)
-                {
-                    *r = 4 - *r;
-                    *dir = -1;
-                }
-                else if(*r == 4)
-                {
-                    *r = 0;
-                    *dir = 0;
-                }
-                else if (*r > 4)
-                {
-                    *r = *r - 4;
-                    *dir = 1;
-                }
-                
-                switch(*r)
-                {
-                    case 0:
-                        *t0 = 0;
-                    break;
-                    
-                    case 1:
-                        *t0 = 20;
-                    break;
-                    
-                    case 2:
-                        *t0 = 10;
-                    break;
-                    
-                    case 3:
-                        *t0 = 5;
-                    break;
-                    
-                    case 4:
-                        *t0 = 2;
-                    break;
-                }
-                
-                (*c)++;
-                
+
+			case btn1Release:
+				currentState = 2;	//DEBUG
+
+				//start here
+				
             break;
-            
-            case REACT:
-                if(*dir > 0)
-                {
-                    if(*pos > 0)
-                    {
-                        (*pos)--;
-                    }
-                    else
-                    {
-                        *pos = range;
-                    }
-                }
-                else if(*dir < 0)
-                {
-                    if(*pos < range)
-                    {
-                        (*pos)++;
-                    }
-                    else
-                    {
-                        *pos = 0;
-                    }
-                }
-            
-                *c = 1;
+
+			case btn2Wait:
+				currentState = 3;	//DEBUG
+
+				//start here
+
             break;
-            
+
+			case btn2Release:
+				currentState = 4;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn3Wait:
+				currentState = 5;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn3Release:
+				currentState = 6;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn4Wait:
+				currentState = 7;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn4Release:
+				currentState = 8;	//DEBUG
+
+				//start here
+
+            break;
+
+			case setRotation:
+				currentState = 9;	//DEBUG
+
+				//start here
+				degree = atoi(rotationValue);		//convert entered values into a shared integer variable
+				num_steps = (degree * 64 / 5.625);	//value for stepper motor control
+				startMotor = 1;
+            break;
+
+			case noPoundRelease:
+				currentState = 10;	//DEBUG
+
+				//start here
+
+            break;
+
             default:
             break;
         }
+
+
         
         // Transitions
-        switch(*task_state)
+        switch(motorAngleControl_state)
         {
-            case INIT:
-                *task_state = WAIT;
+            case btn1Wait:
+				if( (keypadInput != '\0') && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					rotationValue[0] = keypadInput;
+					motorAngleControl_state = btn1Release;
+				} else {
+					motorAngleControl_state = btn1Wait;
+				}
             break;
-            
-            case WAIT:
-                if(*c > *t0)
-                {
-                    *task_state = REACT;
-                }
+
+			case btn1Release:
+				if(keypadInput != '\0'){
+					motorAngleControl_state = btn1Release;	
+				} else {
+					motorAngleControl_state = btn2Wait;
+				}
             break;
-            
-            case REACT:
-                *task_state = WAIT;
+
+			case btn2Wait:
+				if( keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					rotationValue[1] = keypadInput;
+					motorAngleControl_state = btn2Release;
+				} 
+				else if(keypadInput == 'A'){
+					rotationValue[1] = 'A';
+					direction = 1;
+					motorAngleControl_state = btn4Release;
+				}
+				else if(keypadInput == 'B'){
+					rotationValue[1] = 'B';
+					direction = 2;
+					motorAngleControl_state = btn4Release;
+				}
+				else {
+					motorAngleControl_state = btn2Wait;
+				}
             break;
-            
+
+			case btn2Release:
+				if(keypadInput != '\0'){
+					motorAngleControl_state = btn2Release;	
+				} else {
+					motorAngleControl_state = btn3Wait;
+				}
+            break;
+
+			case btn3Wait:
+				if( keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					rotationValue[2] = keypadInput;
+					motorAngleControl_state = btn3Release;
+				} 
+				else if(keypadInput == 'A'){
+					rotationValue[2] = 'A';
+					direction = 1;
+					motorAngleControl_state = btn4Release;
+				}
+				else if(keypadInput == 'B'){
+					rotationValue[2] = 'B';
+					direction = 2;
+					motorAngleControl_state = btn4Release;
+				}
+				else {
+					motorAngleControl_state = btn3Wait;
+				}
+
+				/*
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					rotationValue[2] = keypadInput;
+					motorAngleControl_state = btn3Release;
+				} 
+				else if(keypadInput == '#'){
+					rotationValue[2] = '#';
+					motorAngleControl_state = btn4Release;
+				}
+				else {
+					motorAngleControl_state = btn3Wait;
+				}*/
+            break;
+
+			case btn3Release:
+				if(keypadInput != '\0'){
+					motorAngleControl_state = btn3Release;	
+				} else {
+					motorAngleControl_state = btn4Wait;
+				}
+            break;
+
+			case btn4Wait:
+				if( keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					//the user hasn't entered # to submit the degree after entering 3 digits, throw user back
+					//into the initial button 1 state					
+										
+					//reset value array to all nulls
+					rotationValue[0] = '\0';
+					rotationValue[1] = '\0';
+					rotationValue[2] = '\0';
+					rotationValue[3] = '\0';
+
+					motorAngleControl_state = noPoundRelease;
+				} 
+				else if(keypadInput == 'A'){
+					rotationValue[3] = 'A';
+					direction = 1;
+					motorAngleControl_state = btn4Release;
+				}
+				else if(keypadInput == 'B'){
+					rotationValue[3] = 'B';
+					direction = 2;
+					motorAngleControl_state = btn4Release;
+				}
+				else {
+					motorAngleControl_state = btn4Wait;
+				}
+
+
+
+/*
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					//the user hasn't entered # to submit the degree after entering 3 digits, throw user back
+					//into the initial button 1 state					
+										
+					//reset value array to all nulls
+					rotationValue[0] = '\0';
+					rotationValue[1] = '\0';
+					rotationValue[2] = '\0';
+					rotationValue[3] = '\0';
+
+					motorAngleControl_state = noPoundRelease;
+				} 
+				else if(keypadInput == '#'){
+					rotationValue[3] = '#';
+					motorAngleControl_state = btn4Release;
+				}
+				else {
+					motorAngleControl_state = btn4Wait;
+				}*/
+            break;
+
+			case btn4Release:
+				if(keypadInput != '\0'){
+					motorAngleControl_state = btn4Release;	
+				} else {
+					motorAngleControl_state = setRotation;
+				}
+            break;
+
+			case setRotation:
+				//reset value array to all nulls
+				rotationValue[0] = '\0';
+				rotationValue[1] = '\0';
+				rotationValue[2] = '\0';
+				rotationValue[3] = '\0';
+
+				motorAngleControl_state = btn1Wait;
+            break;
+
+			case noPoundRelease:
+				if(keypadInput != '\0'){
+					motorAngleControl_state = noPoundRelease;	
+				} else {
+					motorAngleControl_state = btn1Wait;
+				}				
+            break;
+
             default:
             break;
         }
-
-}
-
-void Task2()
-{
-    int i, j;
+        
     
-    unsigned short r0, r1, t0, t1;
-    
-    signed char dir0, dir1;
-
-    while(1)
-    {
-        controlTick(&r0, &t0, &dir0, &c0, &task2_stateA, &row, &input0, 8);
-        
-        controlTick(&r1, &t1, &dir1, &c1, &task2_stateB, &col, &input1, 5);
-        
-        // Write field
-        
-        for(i = 0; i < 8; i++)
-        {
-            for(j = 0; j < 5; j++)
-            {
-                if(i == row && j == col)
-                {
-                    field[j][i] = 1;
-                }
-                else
-                {
-                    field[j][i] = 0;
-                }
-                
-            }
-        }
-        
-        vTaskDelay(50);
+        vTaskDelay(100);
     }
+
 }
 
-void Task3()
-{
-    while(1)
-    {
-        Set_A2D_Pin(0);
-        vTaskDelay(5);
-        input0 = ADC;
-        Set_A2D_Pin(1);
-        vTaskDelay(5);
-        input1 = ADC;
-    }
+
+//====================== output machine ==========================
+enum outputTask_states {output} outputTask_state;
+void outputTask(){
+	while(1){
+		//actions	
+		switch(outputTask_state){
+			case output:
+				//assign output variables to ports here
+				PORTA = currentState;
+				break;
+			default:
+				break;
+		}
+
+		//transitions
+		switch(outputTask_state){
+			case output:
+				outputTask_state = output;
+			default:
+				break;
+		}
+
+		vTaskDelay(10);
+	}
 }
+//====================== output machine ==========================
+
+
+
+
+
+//====================== input machine==========================
+//gathers input that can be processed by other machines
+
+enum inputTask_states {input} inputTask_state;
+void inputTask(){
+	while(1){
+		//actions	
+		switch(inputTask_state){
+			case input:
+				//assign inputs to pins here
+				keypadInput = GetKeypadKey();
+				break;
+			default:
+				break;
+		}
+
+		//transitions
+		switch(inputTask_state){
+			case input:
+				inputTask_state = input;
+			default:
+				break;
+		}
+
+		vTaskDelay(20);
+	}
+}
+//====================== input machine ==========================
+
+
 
 int main(void) 
 { 
-    //DDRA = 0x00; PORTA=0xFF;
-    DDRC = 0xFF;
-    DDRD = 0xFF;
-    DDRB = 0xFF;
-    
-    A2D_init();
-    
-    transmit_data(0x00, 0);
-    transmit_data(0xFF, 1);
-   
-    task1_state = INIT;
-    task2_stateA = INIT;
-    task2_stateB = INIT;
-    task3_state = INIT;
-  
-    xTaskCreate(Task1, (signed portCHAR *)"Task1", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
-    xTaskCreate(Task2, (signed portCHAR *)"Task2", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
-    xTaskCreate(Task3, (signed portCHAR *)"Task3", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	//initialize input and output ports
+    DDRA = 0xFF; PORTA = 0x00; //DDRA=1111 1111   PORTA=0000 0000
+    DDRC = 0x0F; PORTC = 0xF0; //DDRC=0000 1111   PORTD=1111 0000
+	DDRD = 0x0F; PORTD = 0xF0; //DDRD=0000 1111   PORTD=1111 0000
+
+	//set state machines to initial states
+    outputTask_state = output;
+    inputTask_state = input;
+	motorAngleControl_state = btn1Wait;
+      
+	//create tasks
+    xTaskCreate(inputTask, (signed portCHAR *)"inputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate(motorAngleControlTask, (signed portCHAR *)"motorAngleControlTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate(motorControlTask, (signed portCHAR *)"motorControlTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+    xTaskCreate(outputTask, (signed portCHAR *)"outputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
  
+	//run machines
     vTaskStartScheduler();
     
     return 0; 

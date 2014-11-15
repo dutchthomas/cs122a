@@ -1,7 +1,7 @@
 /*  Thomas Zwaagstra <tzwaa001@ucr.edu>
 *   Nick Gingerella <nging001@ucr.edu>
 *   Lab section: 22
-*   Lab 6 Part 1
+*   Lab 8 Part 3
 *
 *   I acknowledge all content contained herein, excluding template or example code,
 *   is my own original work.
