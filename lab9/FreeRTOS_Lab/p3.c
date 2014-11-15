@@ -131,7 +131,7 @@ void exactPositionTask()
         switch(exactPosition_state)
         {
             case btn1Wait:
-				if( keypadInput != '#' && keypadInput != '\0' ){
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
 					rotationValue[0] = keypadInput;
 					exactPosition_state = btn1Release;
 				} else {
@@ -148,7 +148,7 @@ void exactPositionTask()
             break;
 
 			case btn2Wait:
-				if( keypadInput != '#' && keypadInput != '\0' ){
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
 					rotationValue[1] = keypadInput;
 					exactPosition_state = btn2Release;
 				} 
@@ -204,7 +204,7 @@ void exactPositionTask()
         }
         
     
-        vTaskDelay(200);
+        vTaskDelay(100);
     }
 
 }
@@ -218,7 +218,7 @@ void outputTask(){
 		switch(outputTask_state){
 			case output:
 				//assign output variables to ports here
-				PORTA = currentState;//keypadInput;
+				PORTA = num_steps;//currentState;//keypadInput;
 				break;
 			default:
 				break;
