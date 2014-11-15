@@ -1,7 +1,7 @@
 /*  Thomas Zwaagstra <tzwaa001@ucr.edu>
 *   Nick Gingerella <nging001@ucr.edu>
 *   Lab section: 22
-*   Lab 8 Part 4
+*   Lab 9 Part 4
 *
 *   I acknowledge all content contained herein, excluding template or example code,
 *   is my own original work.
@@ -34,8 +34,8 @@ unsigned char currentState = 0;	// DEBUG: current state
 unsigned char keypadInput = 0;	// ascii value from keypad
 unsigned short degree = 0;		// degree entered by user
 int num_steps = 0;				// number of steps for stepper motor rotation
-unsigned char direction = 1;	//default to clockwise
-unsigned char startMotor = 0;
+unsigned char direction = 1;	// default to clockwise
+unsigned char startMotor = 0;	// flag for turning stepper motor on and off
 //========= shared variables ==========
 
 
@@ -261,19 +261,6 @@ void motorAngleControlTask()
 				else {
 					motorAngleControl_state = btn3Wait;
 				}
-
-				/*
-				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
-					rotationValue[2] = keypadInput;
-					motorAngleControl_state = btn3Release;
-				} 
-				else if(keypadInput == '#'){
-					rotationValue[2] = '#';
-					motorAngleControl_state = btn4Release;
-				}
-				else {
-					motorAngleControl_state = btn3Wait;
-				}*/
             break;
 
 			case btn3Release:
@@ -310,29 +297,6 @@ void motorAngleControlTask()
 				else {
 					motorAngleControl_state = btn4Wait;
 				}
-
-
-
-/*
-				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
-					//the user hasn't entered # to submit the degree after entering 3 digits, throw user back
-					//into the initial button 1 state					
-										
-					//reset value array to all nulls
-					rotationValue[0] = '\0';
-					rotationValue[1] = '\0';
-					rotationValue[2] = '\0';
-					rotationValue[3] = '\0';
-
-					motorAngleControl_state = noPoundRelease;
-				} 
-				else if(keypadInput == '#'){
-					rotationValue[3] = '#';
-					motorAngleControl_state = btn4Release;
-				}
-				else {
-					motorAngleControl_state = btn4Wait;
-				}*/
             break;
 
 			case btn4Release:

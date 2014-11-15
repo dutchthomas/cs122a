@@ -1,7 +1,7 @@
 /*  Thomas Zwaagstra <tzwaa001@ucr.edu>
 *   Nick Gingerella <nging001@ucr.edu>
 *   Lab section: 22
-*   Lab 8 Part 3
+*   Lab 9 Part 3
 *
 *   I acknowledge all content contained herein, excluding template or example code,
 *   is my own original work.
@@ -39,6 +39,11 @@ unsigned char startMotor = 0;
 //========= shared variables ==========
 
 
+
+//================== motorControl sm =====================
+// description:
+// controls the stepper motor. Sends necessary signals and
+// turns on and off depending on the startMotor flag
 void motorControlTask()
 {
 	const unsigned char signals[8] =  { 0x01, 0x03, 0x02, 0x06, 0x04, 0x0C, 0x08, 0x09 };
@@ -88,7 +93,7 @@ void motorControlTask()
     }
 
 }
-
+//================== motorControl sm =====================
 
 
 
@@ -322,6 +327,8 @@ void motorAngleControlTask()
     }
 
 }
+//================== motorAngleControl sm =====================
+
 
 
 //====================== output machine ==========================
