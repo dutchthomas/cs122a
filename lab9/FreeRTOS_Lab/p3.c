@@ -45,7 +45,8 @@ btn3Wait,
 btn3Release,
 btn4Wait,
 btn4Release,
-setRotation
+setRotation,
+noPoundRelease
 } exactPosition_state;
 
 void exactPositionTask()
@@ -118,7 +119,14 @@ void exactPositionTask()
 				currentState = 9;	//DEBUG
 
 				//start here
-				num_steps = atoi(rotationValue);
+				num_steps = atoi(rotationValue);	//convert entered values into a shared integer variable
+            break;
+
+			case noPoundRelease:
+				currentState = 10;	//DEBUG
+
+				//start here
+
             break;
 
             default:
@@ -170,15 +178,47 @@ void exactPositionTask()
             break;
 
 			case btn3Wait:
-				//exactPosition_state = btn3Release;
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					rotationValue[2] = keypadInput;
+					exactPosition_state = btn3Release;
+				} 
+				else if(keypadInput == '#'){
+					rotationValue[2] = '#';
+					exactPosition_state = btn4Release;
+				}
+				else {
+					exactPosition_state = btn3Wait;
+				}
             break;
 
 			case btn3Release:
-				//exactPosition_state = btn4Wait;
+				if(keypadInput != '\0'){
+					exactPosition_state = btn3Release;	
+				} else {
+					exactPosition_state = btn4Wait;
+				}
             break;
 
 			case btn4Wait:
-				//exactPosition_state = btn4Release;
+				if( keypadInput != '#' && keypadInput != '\0' && (keypadInput >= 0x30) && (keypadInput <= 0x39) ){
+					//the user hasn't entered # to submit the degree after entering 3 digits, throw user back
+					//into the initial button 1 state					
+										
+					//reset value array to all nulls
+					rotationValue[0] = '\0';
+					rotationValue[1] = '\0';
+					rotationValue[2] = '\0';
+					rotationValue[3] = '\0';
+
+					exactPosition_state = noPoundRelease;
+				} 
+				else if(keypadInput == '#'){
+					rotationValue[3] = '#';
+					exactPosition_state = btn4Release;
+				}
+				else {
+					exactPosition_state = btn4Wait;
+				}
             break;
 
 			case btn4Release:
@@ -197,6 +237,14 @@ void exactPositionTask()
 				rotationValue[3] = '\0';
 
 				exactPosition_state = btn1Wait;
+            break;
+
+			case noPoundRelease:
+				if(keypadInput != '\0'){
+					exactPosition_state = noPoundRelease;	
+				} else {
+					exactPosition_state = btn1Wait;
+				}				
             break;
 
             default:
@@ -218,7 +266,7 @@ void outputTask(){
 		switch(outputTask_state){
 			case output:
 				//assign output variables to ports here
-				PORTA = num_steps;//currentState;//keypadInput;
+				PORTA = num_steps;
 				break;
 			default:
 				break;
