@@ -19,230 +19,237 @@
 #include <avr/portpins.h> 
 #include <avr/pgmspace.h> 
  
+//CS122A Resource Headers
+#include "bit.h"
+#include "keypad.h"
+
 //FreeRTOS include files 
 #include "FreeRTOS.h" 
 #include "task.h" 
 #include "croutine.h" 
 
-#include "usart_ATmega1284.h"
+//========= shared variables ==========
+unsigned char keypadInput = 0;	//holds ascii value from keypad
+unsigned char currentState = 0;	//DEBUG: holds current state
+//========= shared variables ==========
 
-// SPI stuff
-char hasData = 0;
-unsigned char data; 
+enum exactPosition_states
+{
+btn1Wait,
+btn1Release,
+btn2Wait,
+btn2Release,
+btn3Wait,
+btn3Release,
+btn4Wait,
+btn4Release,
+setRotation
+} exactPosition_state;
 
-// Master code
-void SPI_MasterInit(void) {
-	// Set DDRB to have MOSI, SCK, and SS as output and MISO as input
-	// Set SPCR register to enable SPI, enable master, and use SCK frequency
-//   of fosc/16  (pg. 168)
-	// Make sure global interrupts are enabled on SREG register (pg. 9)
-	
-	// Set MOSI, SCK as Output
-    DDRB=(1<<5)|(1<<3);
- 
-    // Enable SPI, Set as Master
-    // Prescaler: Fosc/16, Enable Interrupts
-    //The MOSI, SCK pins are as per ATMega8
-    SPCR=(1<<SPE)|(1<<MSTR)|(1<<SPR0)|(1<<SPIE);
- 
-    // Enable Global Interrupts
-    sei();
-	
+void exactPositionTask()
+{
+	static unsigned char rotationValue[4];	//array holds user input that determines angle
+
+    while(1)
+    {
+        
+        // Actions
+        switch(exactPosition_state)
+        {
+            case btn1Wait:
+				currentState = 1;	//DEBUG
+
+				//start here
+            break;
+
+			case btn1Release:
+				currentState = 2;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn2Wait:
+				currentState = 3;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn2Release:
+				currentState = 4;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn3Wait:
+				currentState = 5;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn3Release:
+				currentState = 6;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn4Wait:
+				currentState = 7;	//DEBUG
+
+				//start here
+
+            break;
+
+			case btn4Release:
+				currentState = 8;	//DEBUG
+
+				//start here
+
+            break;
+
+			case setRotation:
+				currentState = 9;	//DEBUG
+
+				//start here
+
+            break;
+
+            default:
+            break;
+        }
+        
+        // Transitions
+        switch(exactPosition_state)
+        {
+            case btn1Wait:
+				exactPosition_state = btn1Release;
+            break;
+
+			case btn1Release:
+				exactPosition_state = btn2Wait;
+            break;
+
+			case btn2Wait:
+				exactPosition_state = btn2Release;
+            break;
+
+			case btn2Release:
+				exactPosition_state = btn3Wait;
+            break;
+
+			case btn3Wait:
+				exactPosition_state = btn3Release;
+            break;
+
+			case btn3Release:
+				exactPosition_state = btn4Wait;
+            break;
+
+			case btn4Wait:
+				exactPosition_state = btn4Release;
+            break;
+
+			case btn4Release:
+				exactPosition_state = setRotation;
+            break;
+
+			case setRotation:
+            break;
+
+            default:
+            break;
+        }
+        
+    
+        vTaskDelay(200);
+    }
+
 }
 
-void SPI_MasterTransmit(unsigned char cData) {
-// data in SPDR will be transmitted, e.g. SPDR = cData;
-	// set SS low
-	while(!(SPSR & (1<<SPIF))) { // wait for transmission to complete
-		;
+
+//====================== output machine ==========================
+enum outputTask_states {output} outputTask_state;
+void outputTask(){
+	while(1){
+		//actions	
+		switch(outputTask_state){
+			case output:
+				//assign output variables to ports here
+				PORTA = currentState;//keypadInput;
+				break;
+			default:
+				break;
+		}
+
+		//transitions
+		switch(outputTask_state){
+			case output:
+				outputTask_state = output;
+			default:
+				break;
+		}
+
+		vTaskDelay(10);
 	}
-// set SS high
 }
+//====================== output machine ==========================
 
-// Servant code 4F B0 C0
-void SPI_ServantInit(void) {
-/*
-	// set DDRB to have MISO(PB6) line as output and MOSI(PB5), SCK(PB7), and SS(PB4) as input
-	DDRB |= 0x40; //01000000;
-	DDRB &= 0x4F; //01001111;
-	PORTB &= 0xb0; //10110000
-	
-	// set SPCR register to enable SPI and enable SPI interrupt (pg. 168)
-	SPCR |= SPIE | SPE;
-	
-	// make sure global interrupts are enabled on SREG register (pg. 9)
-	SREG |= 0x80;
-	
-	
-DDRB = (1<<6);     //MISO as OUTPUT
-//SPCR = (1<<SPE);   //Enable SPI
-SPCR |= SPIE | SPE;
 
-sei();
 
-*/
 
-DDRB = 0x4F; PORTB = 0xB0;
 
-SPCR = 0xC0;
+//====================== input machine==========================
+//gathers input that can be processed by other machines
 
-SREG |= 0x80;
-	
-	
+enum inputTask_states {input} inputTask_state;
+void inputTask(){
+	while(1){
+		//actions	
+		switch(inputTask_state){
+			case input:
+				//assign inputs to pins here
+				keypadInput = GetKeypadKey();
+				break;
+			default:
+				break;
+		}
+
+		//transitions
+		switch(inputTask_state){
+			case input:
+				inputTask_state = input;
+			default:
+				break;
+		}
+
+		vTaskDelay(50);
+	}
 }
+//====================== input machine ==========================
 
-ISR(SPI_STC_vect) { // this is enabled in with the SPCR register’s “SPI
-  // Interrupt Enable”
-	// SPDR contains the received data, e.g. unsigned char receivedData =
-// SPDR;
 
-    if(hasData == 0)
-    {
-        data = SPDR;
-        hasData = 1;
-    }
-
-}
-
-enum state_labels
-{
-INIT,
-MASTER,
-SLAVE
-}
-task1_state, task2_state;
-
-unsigned char led0, s0;
-
-void Task1()
-{
-    while(1)
-    {
-        // Input
-        s0 = !(PINB & 0x01);
-        
-        // Actions
-        switch(task1_state)
-        {
-            case INIT:
-                initUSART(0);
-                initUSART(1);
-            break;
-            
-            case MASTER:
-            
-                if(USART_IsSendReady(1))
-                {
-                    USART_Send(led0, 1);
-                }
-                
-                PORTA = led0;
-            
-            break;
-            
-            case SLAVE:
-                if(USART_HasReceived(0))
-                {
-                    led0 = USART_Receive(0);
-                    USART_Flush(0);
-                }
-                
-                PORTA = led0;
-            
-            break;
-            
-            default:
-            break;
-        }
-        
-        // Transitions
-        switch(task1_state)
-        {
-            case INIT:
-                task1_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            case MASTER:
-                task1_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            case SLAVE:
-                task1_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            default:
-            break;
-        }
-        
-    
-        vTaskDelay(10);
-    }
-
-}
-
-void Task2()
-{
-    while(1)
-    {
-        // Actions
-        switch(task2_state)
-        {
-            case INIT:
-                led0 = 0x01;
-            break;
-            
-            case MASTER:
-                led0 = !led0;
-            
-            break;
-            
-            case SLAVE:
-                // Do nothing... wait!
-            break;
-            
-            default:
-            break;
-        }
-        
-        // Transitions
-        switch(task2_state)
-        {
-            case INIT:
-                task2_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            case MASTER:
-                task2_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            case SLAVE:
-                task2_state = s0 ? MASTER : SLAVE;
-            break;
-            
-            default:
-            break;
-        }
-    
-        
-        
-        vTaskDelay(1000);
-    }
-}
 
 int main(void) 
 { 
-    DDRA = 0xFF;// PORTA=0xFF;
-    DDRC = 0xFF;
-    DDRB = 0x00; PORTB=0xFF;
-    
-    led0 = 0x01;
-   
-    task1_state = INIT;
-    task2_state = INIT;
+	//initialize input and output ports
+    DDRA = 0xFF; PORTA=0x00; //DDRA=1111 1111   PORTA=0000 0000
+	DDRD = 0x0F; PORTD=0xF0; //DDRD=0000 1111   PORTD=1111 0000
+
+	//set state machines to initial states
+    outputTask_state = output;
+    inputTask_state = input;
+	exactPosition_state = btn1Wait;
       
-    xTaskCreate(Task1, (signed portCHAR *)"Task1", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
-    xTaskCreate(Task2, (signed portCHAR *)"Task2", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	//create tasks
+    xTaskCreate(inputTask, (signed portCHAR *)"inputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+	xTaskCreate(exactPositionTask, (signed portCHAR *)"exactPositionTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
+    xTaskCreate(outputTask, (signed portCHAR *)"outputTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL );
  
+	//run machines
     vTaskStartScheduler();
     
     return 0; 
