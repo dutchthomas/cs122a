@@ -31,6 +31,8 @@
 //========= shared variables ==========
 unsigned char keypadInput = 0;	//holds ascii value from keypad
 unsigned char currentState = 0;	//DEBUG: holds current state
+
+int num_steps = 0;
 //========= shared variables ==========
 
 enum exactPosition_states
@@ -48,7 +50,7 @@ setRotation
 
 void exactPositionTask()
 {
-	static unsigned char rotationValue[4];	//array holds user input that determines angle
+	static unsigned char rotationValue[4] = {'\0','\0','\0','\0'};	//array holds user input that determines angle
 
     while(1)
     {
@@ -60,13 +62,14 @@ void exactPositionTask()
 				currentState = 1;	//DEBUG
 
 				//start here
+				
             break;
 
 			case btn1Release:
 				currentState = 2;	//DEBUG
 
 				//start here
-
+				
             break;
 
 			case btn2Wait:
@@ -115,49 +118,85 @@ void exactPositionTask()
 				currentState = 9;	//DEBUG
 
 				//start here
-
+				num_steps = atoi(rotationValue);
             break;
 
             default:
             break;
         }
+
+
         
         // Transitions
         switch(exactPosition_state)
         {
             case btn1Wait:
-				exactPosition_state = btn1Release;
+				if( keypadInput != '#' && keypadInput != '\0' ){
+					rotationValue[0] = keypadInput;
+					exactPosition_state = btn1Release;
+				} else {
+					exactPosition_state = btn1Wait;
+				}
             break;
 
 			case btn1Release:
-				exactPosition_state = btn2Wait;
+				if(keypadInput != '\0'){
+					exactPosition_state = btn1Release;	
+				} else {
+					exactPosition_state = btn2Wait;
+				}
             break;
 
 			case btn2Wait:
-				exactPosition_state = btn2Release;
+				if( keypadInput != '#' && keypadInput != '\0' ){
+					rotationValue[1] = keypadInput;
+					exactPosition_state = btn2Release;
+				} 
+				else if(keypadInput == '#'){
+					rotationValue[1] = '#';
+					exactPosition_state = btn4Release;
+				}
+				else {
+					exactPosition_state = btn2Wait;
+				}
             break;
 
 			case btn2Release:
-				exactPosition_state = btn3Wait;
+				if(keypadInput != '\0'){
+					exactPosition_state = btn2Release;	
+				} else {
+					exactPosition_state = btn3Wait;
+				}
             break;
 
 			case btn3Wait:
-				exactPosition_state = btn3Release;
+				//exactPosition_state = btn3Release;
             break;
 
 			case btn3Release:
-				exactPosition_state = btn4Wait;
+				//exactPosition_state = btn4Wait;
             break;
 
 			case btn4Wait:
-				exactPosition_state = btn4Release;
+				//exactPosition_state = btn4Release;
             break;
 
 			case btn4Release:
-				exactPosition_state = setRotation;
+				if(keypadInput != '\0'){
+					exactPosition_state = btn4Release;	
+				} else {
+					exactPosition_state = setRotation;
+				}
             break;
 
 			case setRotation:
+				//reset value array to all nulls
+				rotationValue[0] = '\0';
+				rotationValue[1] = '\0';
+				rotationValue[2] = '\0';
+				rotationValue[3] = '\0';
+
+				exactPosition_state = btn1Wait;
             break;
 
             default:
