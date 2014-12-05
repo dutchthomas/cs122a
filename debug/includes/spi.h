@@ -87,7 +87,6 @@ void spiWrite(char command, unsigned char *data, int length)
     int i;
     for(i = 0; i < length; i++)
     {
-        uoutSend("Send byte! \n\r");
         spiSend(data[i]);
     }
 

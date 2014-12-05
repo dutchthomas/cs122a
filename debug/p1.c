@@ -28,6 +28,8 @@ char channel = 7;
 
 char masterMac[3] = { 0x56, 0x34, 0x12 }; // MAC address of clicker, packed backwards
 
+char nrfMode = 0; // 0 = receive, 1 = send ack
+
 void nrfPrintReg()
 {
         int i;
@@ -37,7 +39,7 @@ void nrfPrintReg()
         {
             spiRead( 0x00 | i, &data, 1);
             
-            uoutSend("Reg "); uoutSendInt(i); uoutSend(": "); uoutSendInt(data); uoutSend("\n\r");
+            uoutSend("Reg "); uoutSendInt(i, 10); uoutSend(": "); uoutSendInt(data, 16); uoutSend("\n\r");
             
         }
         
@@ -48,12 +50,9 @@ void nrfMaster()
 {
     // Enable config line
     PORTB = SetBit(PORTB, DDB0, 0);
-
-    //digitalWrite(CE,LOW);                          // Modify configuration Registers
     
     spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x0A); // Power on
     
-    // TODO delay 2 ms ???
     delay_ms(2);
     
     spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x3F); // 2byte CRC, receive mode
@@ -68,10 +67,57 @@ void nrfMaster()
     
     spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear interupt
     spiWrite(NRF_REG_W | NRF_RX_ADDR_P0, masterMac, 3); // Send mac address to listen on
-    spiWrite(NRF_REG_W | NRF_TX_ADDR, masterMac, 3); // Send mac address to listen on 
+
     
-    // Disable config line
+    // Disable config line, enable receiver
+    PORTB = SetBit(PORTB, DDB0, 1);  
+}
+
+void nrfAck(unsigned char status, unsigned char *mac, int len)
+{
+    // Enable config line
+    PORTB = SetBit(PORTB, DDB0, 0);
+
+    spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x0A); // Power on
+    
+    delay_ms(2);
+
+    spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x3E); // 2byte CRC, transmit mode
+    spiWriteByte(NRF_REG_W | NRF_EN_AA, 0x00); // disable auto ack, clicker does not support it
+    spiWriteByte(NRF_REG_W | NRF_SETUP_AW, 0x01); // 3-byte MAC
+    spiWriteByte(NRF_REG_W | NRF_SETUP_RETR, 0x00);// Disable retransmit
+    spiWriteByte(NRF_REG_W | NRF_RF_CH, channel); // Set channel
+
+    spiWriteByte(NRF_REG_W | NRF_RF_SETUP, 0x06); // 1Mbps, high power
+    
+    spiWrite(NRF_FLUSH_TX, 0, 0); // Flush transmit buffer
+    
+    spiWriteByte(NRF_REG_W | NRF_STATUS, 0x60); // Clear IRQ...
+    
+    spiWriteByte(NRF_W_TX_PAYLOAD, 0x06); // Set packet...
+
+    spiWrite(NRF_REG_W | NRF_TX_ADDR, mac, 3); // Send mac address to transmit to 
+
+    // Disable config line, send packet
     PORTB = SetBit(PORTB, DDB0, 1);
+    
+    // Keep it high for transmit
+    delay_ms(2);
+    
+    unsigned char nrfStatus;
+    
+    spiRead(NRF_REG_R | NRF_STATUS, &nrfStatus, 1);
+    
+    if(GetBit(nrfStatus, 5))
+    {
+        uoutSend("TX packet sent \n\r");
+    }
+    else
+    {
+        uoutSend("TX packet NOT sent \n\r");
+    }
+    
+    spiWriteByte(NRF_REG_W | NRF_STATUS, 0x60); // Clear IRQ...
 }
 
 int SMTick1(task* t)
@@ -104,7 +150,7 @@ int SMTick1(task* t)
         break;
         
         case 1:
-            PORTA = 0xFF;
+            PORTA = 0x01;
         break;
         
         default:
@@ -138,23 +184,50 @@ int SMTick3(task* t)
 
     if(!GetBit(PINB, 1)) // low = on
     {
+
         uoutSend("IRQ low\n\r");
+        
+        unsigned char status;
+        
+        spiRead(NRF_REG_R | NRF_STATUS, &status, 1);
+        
+        if(GetBit(status, 6))
+        {
+            uoutSend("RX packet ready \n\r");
+        }
+        else
+        {
+            uoutSend("RX packet NOT ready \n\r");
+        }
         
         unsigned char packet[4]; // mac + data = 3 + 1 = 4
 
         spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
-        spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ...
+        spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
         
+        // Next ISR is in ACK...
+        nrfMode = 1;
+        
+        unsigned char mac[3] = {0x93, 0x87, 0xC9};
+        unsigned char rmac[3] = {0xC9, 0x87, 0x93};
+        
+        // ACK the packet
+        nrfAck(0x06, rmac, 4); // packet length 4
+        
+        // Back to master
+        nrfMaster();
+       
         uoutSend("Packet: ");
         
         int i;
         for(i = 0; i < 4; i++)
         {
-            uoutSendInt(packet[i]);
+            uoutSendInt(packet[i], 16);
             uoutSend(" ");
         }
         
         uoutSend("\n\r");
+        
     }
 
 

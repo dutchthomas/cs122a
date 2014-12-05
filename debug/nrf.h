@@ -17,6 +17,10 @@
 
 // Radio function
 #define NRF_FLUSH_RX 0xE2
+#define NRF_FLUSH_TX 0xE1
+
+// Config
+#define NRF_SETUP_RETR 0x04
 
 // Pipeline settings
 #define NRF_RX_ADDR_P0 0x0A
@@ -25,3 +29,4 @@
 
 // Payload
 #define NRF_R_RX_PAYLOAD 0x61
+#define NRF_W_TX_PAYLOAD 0xA0

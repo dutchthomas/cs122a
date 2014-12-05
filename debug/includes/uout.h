@@ -33,11 +33,11 @@ void uoutTick()
     memmove(uoutBuffer, uoutBuffer+count, count+uoutLen); 
 }
 
-void uoutSendInt(int input)
+void uoutSendInt(int input, int base)
 {
     char output[100];
     
-    itoa(input, output, 10);
+    itoa(input, output, base);
     uoutSend(output);
 }
 
