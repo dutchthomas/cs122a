@@ -20,6 +20,40 @@
 
 // Global
 
+
+enableINT0()
+{
+    // Enable input on interupt
+	DDRD &= ~(1<<PD2);
+	
+	// Enable pull-up resistor
+	PORTD |= 1<<PD2;
+	
+	// Enable INT0 mask
+	EIMSK |= 1<<INT0;		// Enable INT0
+	
+	// Falling edge detect
+	EICRA = 1<<ISC01;
+	
+	// Enable interupts
+	sei();
+}
+
+
+
+//Interrupt Service Routine for INT0
+ISR(INT0_vect)
+{
+ 
+    uoutSend("ISR!");
+    
+    EIFR = 1 << INTF0;
+ 
+ }
+
+
+
+
 /* Task definitions */
 
 unsigned char uInput;
@@ -55,7 +89,7 @@ void nrfMaster()
     
     delay_ms(2);
     
-    spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x3F); // 2byte CRC, receive mode
+    spiWriteByte(NRF_REG_W | NRF_CONFIG, 0x3F); // 2byte CRC, receive mode, IRQ on RX
     spiWriteByte(NRF_REG_W | NRF_EN_RXADDR, 0x01); // enable RX pipe 1
     spiWriteByte(NRF_REG_W | NRF_RX_PW_P0, 4); // packet size = mac length + data length = 3 + 1 = 4
     spiWriteByte(NRF_REG_W | NRF_EN_AA, 0x00); // disable auto ack, clicker does not support it
@@ -92,7 +126,7 @@ void nrfAck(unsigned char status, unsigned char *mac, int len)
     
     spiWrite(NRF_FLUSH_TX, 0, 0); // Flush transmit buffer
     
-    spiWriteByte(NRF_REG_W | NRF_STATUS, 0x60); // Clear IRQ...
+    spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ...
     
     spiWriteByte(NRF_W_TX_PAYLOAD, 0x06); // Set packet...
 
@@ -181,54 +215,47 @@ int SMTick2(task* t)
 
 int SMTick3(task* t)
 {
-
-    if(!GetBit(PINB, 1)) // low = on
-    {
-
-        uoutSend("IRQ low\n\r");
         
         unsigned char status;
         
         spiRead(NRF_REG_R | NRF_STATUS, &status, 1);
         
-        if(GetBit(status, 6))
+        if(!GetBit(status, 6))
         {
-            uoutSend("RX packet ready \n\r");
+            //uoutSend("RX packet NOT ready \n\r");
         }
         else
         {
-            uoutSend("RX packet NOT ready \n\r");
-        }
         
-        unsigned char packet[4]; // mac + data = 3 + 1 = 4
+            unsigned char packet[4]; // mac + data = 3 + 1 = 4
 
-        spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
-        spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
-        
-        // Next ISR is in ACK...
-        nrfMode = 1;
-        
-        unsigned char mac[3] = {0x93, 0x87, 0xC9};
-        unsigned char rmac[3] = {0xC9, 0x87, 0x93};
-        
-        // ACK the packet
-        nrfAck(0x06, rmac, 4); // packet length 4
-        
-        // Back to master
-        nrfMaster();
-       
-        uoutSend("Packet: ");
-        
-        int i;
-        for(i = 0; i < 4; i++)
-        {
-            uoutSendInt(packet[i], 16);
-            uoutSend(" ");
+            spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
+            spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
+            
+            // Next ISR is in ACK...
+            nrfMode = 1;
+            
+            unsigned char mac[3] = {0x93, 0x87, 0xC9};
+            unsigned char rmac[3] = {0xC9, 0x87, 0x93};
+            
+            // ACK the packet
+            nrfAck(0x06, rmac, 4); // packet length 4
+            
+            // Back to master
+            nrfMaster();
+           
+            uoutSend("Packet: ");
+            
+            int i;
+            for(i = 0; i < 4; i++)
+            {
+                uoutSendInt(packet[i], 16);
+                uoutSend(" ");
+            }
+            
+            uoutSend("\n\r");
+            
         }
-        
-        uoutSend("\n\r");
-        
-    }
 
 
 
@@ -249,6 +276,8 @@ int main(void)
     
     // Spi as master
     spiInitMaster();
+    
+    enableINT0();
     
     static task task1, task2, task3;
     task *tasks[] = { &task1, &task2, &task3 };
