@@ -20,6 +20,8 @@
 
 // Global
 
+void nrfGet();
+
 
 enableINT0()
 {
@@ -46,6 +48,8 @@ ISR(INT0_vect)
 {
  
     uoutSend("ISR!");
+    
+    nrfGet();
     
     EIFR = 1 << INTF0;
  
@@ -154,6 +158,51 @@ void nrfAck(unsigned char status, unsigned char *mac, int len)
     spiWriteByte(NRF_REG_W | NRF_STATUS, 0x60); // Clear IRQ...
 }
 
+void nrfGet()
+{
+    unsigned char status;
+    
+    spiRead(NRF_REG_R | NRF_STATUS, &status, 1);
+    
+    if(!GetBit(status, 6))
+    {
+        //uoutSend("RX packet NOT ready \n\r");
+    }
+    else
+    {
+    
+        unsigned char packet[4]; // mac + data = 3 + 1 = 4
+
+        spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
+        spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
+        
+        // Next ISR is in ACK...
+        nrfMode = 1;
+        
+        unsigned char mac[3] = {0x93, 0x87, 0xC9};
+        unsigned char rmac[3] = {0xC9, 0x87, 0x93};
+        
+        // ACK the packet
+        nrfAck(0x06, rmac, 4); // packet length 4
+        
+        // Back to master
+        nrfMaster();
+       
+        uoutSend("Packet: ");
+        
+        int i;
+        for(i = 0; i < 4; i++)
+        {
+            uoutSendInt(packet[i], 16);
+            uoutSend(" ");
+        }
+        
+        uoutSend("\n\r");
+        
+    }
+
+}
+
 int SMTick1(task* t)
 {
     // Actions
@@ -213,54 +262,6 @@ int SMTick2(task* t)
     uoutTick();
 }
 
-int SMTick3(task* t)
-{
-        
-        unsigned char status;
-        
-        spiRead(NRF_REG_R | NRF_STATUS, &status, 1);
-        
-        if(!GetBit(status, 6))
-        {
-            //uoutSend("RX packet NOT ready \n\r");
-        }
-        else
-        {
-        
-            unsigned char packet[4]; // mac + data = 3 + 1 = 4
-
-            spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
-            spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
-            
-            // Next ISR is in ACK...
-            nrfMode = 1;
-            
-            unsigned char mac[3] = {0x93, 0x87, 0xC9};
-            unsigned char rmac[3] = {0xC9, 0x87, 0x93};
-            
-            // ACK the packet
-            nrfAck(0x06, rmac, 4); // packet length 4
-            
-            // Back to master
-            nrfMaster();
-           
-            uoutSend("Packet: ");
-            
-            int i;
-            for(i = 0; i < 4; i++)
-            {
-                uoutSendInt(packet[i], 16);
-                uoutSend(" ");
-            }
-            
-            uoutSend("\n\r");
-            
-        }
-
-
-
-}
-
 /* End task definitions */
 
 int main(void)
@@ -271,7 +272,6 @@ int main(void)
 
     // PORT config
     DDRA = 0xFF; PORTA = 0x00;
-    
     DDRB = 0x01; PORTB = 0x02; // IRQ in
     
     // Spi as master
@@ -279,8 +279,8 @@ int main(void)
     
     enableINT0();
     
-    static task task1, task2, task3;
-    task *tasks[] = { &task1, &task2, &task3 };
+    static task task1, task2;
+    task *tasks[] = { &task1, &task2};
     
     unsigned short numTasks = sizeof(tasks)/sizeof(task*);
     
@@ -289,9 +289,6 @@ int main(void)
 
     task2.period = 50;
     task2.TickFn = &SMTick2;
-    
-    task3.period = 1000;
-    task3.TickFn = &SMTick3;
     
     unsigned short gcd = tasksInit(tasks, numTasks);
     
