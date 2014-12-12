@@ -1,17 +1,22 @@
 #include <avr/io.h>
 #include <avr/interrupt.h>
-#include "includes/lcd.h"
-#include "includes/bit.h"
 
+//includes for lcd and Get/Set bit
+#include "includes/bit.h"
+#include "includes/lcd.h"
+
+//includes for scheduler
 #include "includes/tomsched.h" 
 #include "includes/timer.h"
+
+//includes for temperature sensor
 #include "includes/onewire_ds18b20.h"
 #include "includes/onewire.h"
 
 
 // Globals
 unsigned char sensor;	//input from motion sensor
-char* motionSensorMsg;	//lcd message for motion sensor
+char* motionSensorMsg;	//lcd message
 
 
 // Task definitions 
@@ -157,6 +162,8 @@ int main(void)
 	DDRB = 0xFF; PORTB = 0x00; 	//1111 1111 : 0000 0000
 	DDRA = 0xFD; PORTA = 0x02;	//1111 1101 : 0000 0010
    
+
+	//scheduler setup
     static task motionSensorPoll, lcdDisplay;
     task *tasks[] = { &lcdDisplay, &motionSensorPoll };
     
@@ -177,11 +184,11 @@ int main(void)
     TimerOn();
 
 
-	//custom character
+
+	//custom character for lcd
 	const char personPattern[8] = {0x04, 0x0A, 0x04, 0x1f, 0x04, 0x04, 0x0A, 0x11};
 	LCD_build(0,personPattern);
 	
-
 	//initialize LCD
 	LCD_init();    
 
