@@ -22,9 +22,9 @@
 
 void nrfGet();
 char tempProcess(char in);
+void enableINT0();
 
-
-enableINT0()
+void enableINT0()
 {
     // Enable input on interupt
 	DDRD &= ~(1<<PD2);
@@ -59,13 +59,9 @@ ISR(INT0_vect)
 
 /* Task definitions */
 
-unsigned char uInput;
-
 char channel = 7;
 
 char masterMac[3] = { 0x56, 0x34, 0x12 }; // MAC address of clicker, packed backwards
-
-char nrfMode = 0; // 0 = receive, 1 = send ack
 
 void nrfPrintReg()
 {
@@ -147,11 +143,11 @@ void nrfAck(unsigned char status, unsigned char *mac, int len)
     
     if(GetBit(nrfStatus, 5))
     {
-        uoutSend("TX packet sent \n\r");
+        //uoutSend("TX packet sent \n\r");
     }
     else
     {
-        uoutSend("TX packet NOT sent \n\r");
+        //uoutSend("TX packet NOT sent \n\r");
     }
     
     spiWriteByte(NRF_REG_W | NRF_STATUS, 0x60); // Clear IRQ...
@@ -176,9 +172,6 @@ void nrfGet()
         spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
         
         char result = tempProcess(packet[3]);
-        
-        // Next ISR is in ACK...
-        nrfMode = 1;
         
         unsigned char mac[3] = {0x93, 0x87, 0xC9};
         unsigned char rmac[3] = {0xC9, 0x87, 0x93};
@@ -207,34 +200,38 @@ void nrfGet()
 }
 
 char digOn = 0;
-char hasTempIn = 0;
-char tempIn = 0;
 char temp = 0;
 char d0 = -1;
 char d1 = -1;
 char t = 0;
+char remoteTimeout = -1;
+
+void tempCancel()
+{
+    digOn = 0;
+    d1 = temp/10;
+    d0 = temp % 10;
+    t = 0;
+    remoteTimeout = -1;
+}
 
 char tempProcess(char in)
 {
+
     if(in >= 0x30 && in <= 0x39)
     {
+        remoteTimeout = 0;
         in &= 0x0F;
         
         if(digOn == 0)
         {
             d1 = in;
+            d0 = -1;
             digOn = 1;
-            
-            uoutSend("Dig1: ");
-            uoutSendInt(d1, 10);
-            uoutSend("\n\r");
         }
         else if(digOn == 1)
         {
             d0 = in;
-            uoutSend("Dig0: ");
-            uoutSendInt(d0, 10);
-            uoutSend("\n\r");
             
             t = d1*10 + d0;
             
@@ -242,19 +239,21 @@ char tempProcess(char in)
             digOn = 0;
             
             // Valid
-            if(t > 60 && t < 90)
+            if(t >= 60 && t <= 90)
             {
                 uoutSend("Temp: ");
                 uoutSendInt(t, 10);
                 uoutSend("\n\r");
                 
                 temp = t;
+                remoteTimeout = -1;
                 return 0x06;
             }
             // Invalid
             else
             {
                 uoutSend("Invalid Temp.\n\r");
+                tempCancel();
                 return 0x05;
             }
 
@@ -268,6 +267,8 @@ char tempProcess(char in)
 /* Radio control interface */
 int SMTick1(task* t)
 {
+    static unsigned char uInput;
+
     // Actions
     switch(t->state)
     {        
@@ -320,14 +321,19 @@ int SMTick1(task* t)
 
 }
 
-int SMTick2(task* t)
-{
-    uoutTick();
-}
-
 int SMTick3(task* t)
 {
-
+    if(remoteTimeout >= 0)
+    {
+        remoteTimeout++;
+    }
+    
+    if(remoteTimeout > 3)
+    {
+        remoteTimeout = -1;
+        uoutSend("Remote Timeout \n\r");
+        tempCancel();
+    }
 }
 
 /* End task definitions */
@@ -345,6 +351,9 @@ int main(void)
     // Spi as master
     spiInitMaster();
     
+    // Radio init
+    nrfMaster();
+    
     enableINT0();
     
     static task task1, task2, task3;
@@ -356,9 +365,9 @@ int main(void)
     task1.TickFn = &SMTick1;
 
     task2.period = 50;
-    task2.TickFn = &SMTick2;
+    task2.TickFn = &uoutTick;
     
-    task3.period = 100;
+    task3.period = 1000;
     task3.TickFn = &SMTick3;
     
     unsigned short gcd = tasksInit(tasks, numTasks);
