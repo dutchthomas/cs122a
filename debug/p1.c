@@ -21,6 +21,7 @@
 // Global
 
 void nrfGet();
+char tempProcess(char in);
 
 
 enableINT0()
@@ -46,14 +47,12 @@ enableINT0()
 //Interrupt Service Routine for INT0
 ISR(INT0_vect)
 {
- 
-    uoutSend("ISR!");
-    
+    // Get a packet
     nrfGet();
     
+    // Clear the interupt (AVR)
     EIFR = 1 << INTF0;
- 
- }
+}
 
 
 
@@ -132,7 +131,7 @@ void nrfAck(unsigned char status, unsigned char *mac, int len)
     
     spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ...
     
-    spiWriteByte(NRF_W_TX_PAYLOAD, 0x06); // Set packet...
+    spiWriteByte(NRF_W_TX_PAYLOAD, status); // Set packet...
 
     spiWrite(NRF_REG_W | NRF_TX_ADDR, mac, 3); // Send mac address to transmit to 
 
@@ -176,6 +175,8 @@ void nrfGet()
         spiRead(NRF_R_RX_PAYLOAD, packet, 4); // Get packet...
         spiWriteByte(NRF_REG_W | NRF_STATUS, 0x70); // Clear IRQ, data rx bit
         
+        char result = tempProcess(packet[3]);
+        
         // Next ISR is in ACK...
         nrfMode = 1;
         
@@ -183,11 +184,12 @@ void nrfGet()
         unsigned char rmac[3] = {0xC9, 0x87, 0x93};
         
         // ACK the packet
-        nrfAck(0x06, rmac, 4); // packet length 4
+        nrfAck(result, rmac, 4); // packet length 4
         
         // Back to master
         nrfMaster();
        
+        /*
         uoutSend("Packet: ");
         
         int i;
@@ -198,11 +200,72 @@ void nrfGet()
         }
         
         uoutSend("\n\r");
+        */
         
     }
 
 }
 
+char digOn = 0;
+char hasTempIn = 0;
+char tempIn = 0;
+char temp = 0;
+char d0 = -1;
+char d1 = -1;
+char t = 0;
+
+char tempProcess(char in)
+{
+    if(in >= 0x30 && in <= 0x39)
+    {
+        in &= 0x0F;
+        
+        if(digOn == 0)
+        {
+            d1 = in;
+            digOn = 1;
+            
+            uoutSend("Dig1: ");
+            uoutSendInt(d1, 10);
+            uoutSend("\n\r");
+        }
+        else if(digOn == 1)
+        {
+            d0 = in;
+            uoutSend("Dig0: ");
+            uoutSendInt(d0, 10);
+            uoutSend("\n\r");
+            
+            t = d1*10 + d0;
+            
+            // Start over...
+            digOn = 0;
+            
+            // Valid
+            if(t > 60 && t < 90)
+            {
+                uoutSend("Temp: ");
+                uoutSendInt(t, 10);
+                uoutSend("\n\r");
+                
+                temp = t;
+                return 0x06;
+            }
+            // Invalid
+            else
+            {
+                uoutSend("Invalid Temp.\n\r");
+                return 0x05;
+            }
+
+        }
+
+    }
+    
+    return 0x06;
+}
+
+/* Radio control interface */
 int SMTick1(task* t)
 {
     // Actions
@@ -262,6 +325,11 @@ int SMTick2(task* t)
     uoutTick();
 }
 
+int SMTick3(task* t)
+{
+
+}
+
 /* End task definitions */
 
 int main(void)
@@ -272,15 +340,15 @@ int main(void)
 
     // PORT config
     DDRA = 0xFF; PORTA = 0x00;
-    DDRB = 0x01; PORTB = 0x02; // IRQ in
+    DDRB = 0x01; PORTB = 0x02;
     
     // Spi as master
     spiInitMaster();
     
     enableINT0();
     
-    static task task1, task2;
-    task *tasks[] = { &task1, &task2};
+    static task task1, task2, task3;
+    task *tasks[] = { &task1, &task2, &task3};
     
     unsigned short numTasks = sizeof(tasks)/sizeof(task*);
     
@@ -289,6 +357,9 @@ int main(void)
 
     task2.period = 50;
     task2.TickFn = &SMTick2;
+    
+    task3.period = 100;
+    task3.TickFn = &SMTick3;
     
     unsigned short gcd = tasksInit(tasks, numTasks);
     
