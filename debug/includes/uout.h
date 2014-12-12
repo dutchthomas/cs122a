@@ -7,7 +7,7 @@ unsigned char uoutLine;
 unsigned char uoutBuffer[2000];
 
 void uoutInit(unsigned char n);
-void uoutTick();
+int uoutTick();
 void uoutSend(char *string);
 
 void uoutInit(unsigned char n)
@@ -16,7 +16,7 @@ void uoutInit(unsigned char n)
     initUSART(n);
 }
 
-void uoutTick()
+int uoutTick()
 {
     int count = 0;
 
@@ -30,7 +30,17 @@ void uoutTick()
         uoutLen--;
     }
     
-    memmove(uoutBuffer, uoutBuffer+count, count+uoutLen); 
+    memmove(uoutBuffer, uoutBuffer+count, count+uoutLen);
+    
+    return count; 
+}
+
+void uoutSendInt(int input, int base)
+{
+    char output[100];
+    
+    itoa(input, output, base);
+    uoutSend(output);
 }
 
 void uoutSend(char *string)
