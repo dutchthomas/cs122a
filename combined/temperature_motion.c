@@ -26,6 +26,7 @@ char temp = 0;
 char d0 = -1;
 char d1 = -1;
 char remoteTimeout = -1;
+char kill;
 
 //includes for remote
 #define MAX_TEMP 90
@@ -304,12 +305,80 @@ int hvacTick(task *t)
 
     }
     
+    if(!kill)
+    {
     PORTA = SetBit(PORTA, 2, led_fan);
     PORTA = SetBit(PORTA, 3, led_ac);
     PORTA = SetBit(PORTA, 4, led_heat);
-    
+    }
+    else
+    {
+        PORTA = SetBit(PORTA, 2, 0);
+        PORTA = SetBit(PORTA, 3, 0);
+        PORTA = SetBit(PORTA, 4, 0);
+    }
     return 0;
 }
+
+
+
+int sensorTimeoutTick(task *t)
+{
+    static char stime = 0;
+
+    // Action
+    switch(t->state)
+    {
+        case 0:
+            kill = 1;
+            stime = 0;
+        break;
+    
+        case 1:
+        
+            kill = 0;
+        
+            if(stime < 100)
+            {
+                stime++;
+            }
+            
+            if(sensor)
+            {
+                stime = 0;
+            }
+
+        
+        break;
+        
+        default:
+        break;
+    }
+
+    // transition
+    switch(t->state)
+    {
+        case 0:
+            if(sensor)
+            {
+                t->state = 1;
+            }
+        break;
+        
+        case 1:
+            if(stime > 5)
+            {
+                t->state = 0;
+            }
+        break;
+    
+        default:
+        break;
+    }
+
+    return 0;
+}
+
 
 
 /* End task definitions */
@@ -327,8 +396,8 @@ int main(void)
 	DDRD = 0x0a; PORTD = 0x05;
 
 	//scheduler setup
-    static task motionSensorPoll, lcdDisplay, uoutTask, RT_Task, M_Task, hvacTask;
-    task *tasks[] = { &lcdDisplay, &motionSensorPoll, &uoutTask, &RT_Task, &M_Task, &hvacTask };
+    static task motionSensorPoll, lcdDisplay, uoutTask, RT_Task, M_Task, hvacTask, sensorTimeoutTask;
+    task *tasks[] = { &lcdDisplay, &motionSensorPoll, &uoutTask, &RT_Task, &M_Task, &hvacTask, &sensorTimeoutTask };
     
     unsigned short numTasks = sizeof(tasks)/sizeof(task*);
     
@@ -356,6 +425,10 @@ int main(void)
 	hvacTask.period = 500;
 	hvacTask.TickFn = &hvacTick;
 	
+	// sensor timeout
+	sensorTimeoutTask.period = 500;
+	sensorTimeoutTask.TickFn = &sensorTimeoutTick;
+
 	// Init radio
     spiInitMaster();
     nrfMaster();
