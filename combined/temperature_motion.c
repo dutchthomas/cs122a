@@ -21,12 +21,21 @@
 #include "includes/spi.h"
 
 // Global
+unsigned char sensor;	//input from motion sensor
+char* motionSensorMsg;	//lcd message
+static int temperature;
+
+char led_ac, led_fan, led_heat;
+
+char digMode = 0;
 char digOn = 0;
 char temp = 0;
 char d0 = -1;
 char d1 = -1;
 char remoteTimeout = -1;
 char kill;
+char enable = 0;
+char fanMode = 0;
 
 //includes for remote
 #define MAX_TEMP 90
@@ -35,11 +44,6 @@ char kill;
 #include "nrf.h"
 #include "radio.c"
 
-
-// Globals
-unsigned char sensor;	//input from motion sensor
-char* motionSensorMsg;	//lcd message
-static int temperature;
 
 
 // Task definitions 
@@ -52,12 +56,39 @@ int lcdDisplayTick(task* t){
 	//actions	
 	switch(t->state){
 		case lcd_init:
-			//LCD_init();							//initialize LCD
+			LCD_init();							//initialize LCD
 			LCD_ClearScreen();					//clear screen of any artifacts
 			break;
 		case s1:
 			//LCD_ClearScreen();					//clear screen of any artifacts
 			//LCD_DisplayString(1,motionSensorMsg);	//display motion sensor message
+			
+				LCD_Cursor(14);
+				
+				if(fanMode)
+				{
+				    LCD_WriteData(1);
+			    }
+			    else if(led_fan && !kill && enable && temp)
+			    {
+			        LCD_WriteData(2);
+			    }
+			    else
+			    {
+			        LCD_WriteData(' ');
+			    }
+			    
+				LCD_Cursor(12);
+			    
+			    if(enable)
+			    {
+			        LCD_WriteData(3);
+			    }
+			    else
+			    {
+			        LCD_WriteData(4);
+			    }
+			
 			break;
 		default:
 			break;
@@ -201,28 +232,35 @@ static struct OnewireDevice therm;
 /* Radio control interface */
 int menuTask(task* t)
 {
-    static unsigned char uInput;
-
     if(USART_HasReceived(0))
     {
-        uInput = USART_Receive(0);
+        char uInput = USART_Receive(0);
         
         switch(uInput)
         {
-            case 'r':
-                nrfPrintReg();
+            // Fan
+            case 'f':
+                tempProcess(0x3F); // emulate "?" function button
+                tempProcess(0x32); // emulate "2" function button
             break;
             
-            case 'm':
-                nrfMaster();
+            // Enable
+            case 'e':
+                tempProcess(0x3F); // emulate "?" function button
+                tempProcess(0x31); // emulate "2" function button
             break;
 
             default:
+                if(uInput >= '0' && uInput <= '9')
+                {
+                    tempProcess(0x30 | (uInput - '0'));
+                }
             break;
         }
     }
     
     return 0;
+    
 }
 
 
@@ -247,8 +285,8 @@ int remoteTimeoutTask(task* t)
 
 int hvacTick(task *t)
 {
-    static char led_ac, led_fan, led_heat;
 
+    statusPrint();
 
     // Action
     switch(t->state)
@@ -305,15 +343,23 @@ int hvacTick(task *t)
 
     }
     
-    if(!kill)
+    if(enable && !kill && temp)
     {
-    PORTA = SetBit(PORTA, 2, led_fan);
-    PORTA = SetBit(PORTA, 3, led_ac);
-    PORTA = SetBit(PORTA, 4, led_heat);
+        if(fanMode)
+        {
+            PORTA = SetBit(PORTA, 2, 1);
+        }
+        else
+        {
+            PORTA = SetBit(PORTA, 2, led_fan);
+        }
+        PORTA = SetBit(PORTA, 3, led_ac);
+        PORTA = SetBit(PORTA, 4, led_heat);
     }
     else
-    {
-        PORTA = SetBit(PORTA, 2, 0);
+    {   
+        
+        PORTA = SetBit(PORTA, 2, fanMode);
         PORTA = SetBit(PORTA, 3, 0);
         PORTA = SetBit(PORTA, 4, 0);
     }
@@ -381,6 +427,7 @@ int sensorTimeoutTick(task *t)
 
 
 
+
 /* End task definitions */
 
 
@@ -414,7 +461,7 @@ int main(void)
     M_Task.TickFn = &menuTask;
     
 	//LCD display task
-    lcdDisplay.period = 500;
+    lcdDisplay.period = 100;
     lcdDisplay.TickFn = &lcdDisplayTick;
 
 	//Motion sensor polling task
@@ -436,7 +483,10 @@ int main(void)
 	
 	// Init USART
     uoutInit(0);
-    uoutSend("Master start\n\r");
+    delay_ms(20);
+    uoutSend("\n\r\n\r\n\r");
+    uoutSend("  Welcome to thermostat!\n\r");
+    uoutSend("==========================\n\r");
     	
     unsigned short gcd = tasksInit(tasks, numTasks);
     
@@ -446,10 +496,16 @@ int main(void)
 
 	//custom character for lcd
 	unsigned char personPattern[8] = {0x04, 0x0A, 0x04, 0x1f, 0x04, 0x04, 0x0A, 0x11};
-	LCD_build(0,personPattern);
+	unsigned char fanOnPattern[8] = {0x00,0x06,0x1A,0x15,0x0B,0x0C,0x00,0x1F};
+	unsigned char fanAutoPattern[8] = {0x00,0x06,0x1A,0x15,0x0B,0x0C,0x00,0x00};
+	unsigned char onPattern[8] = {0x10, 0x12, 0x16, 0x1C, 0x18, 0x10, 0x10, 0x10};
+	unsigned char offPattern[8] = {0x10, 0x10, 0x10, 0x18, 0x1C, 0x16, 0x12, 0x10};
 	
-	//initialize LCD
-	LCD_init();    
+	LCD_build(0,personPattern);
+	LCD_build(1,fanOnPattern);
+	LCD_build(2,fanAutoPattern); 
+	LCD_build(3,onPattern); 
+	LCD_build(4,offPattern); 
 
     while(1)
     {

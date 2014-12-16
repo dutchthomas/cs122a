@@ -37,6 +37,66 @@ ISR(INT0_vect)
     EIFR = 1 << INTF0;
 }
 
+void statusPrint()
+{
+    char *msg = "Temp: --  | Target: --  | System: Off | Fan: Auto \r";
+    
+    if(enable)
+    {
+        memcpy(msg+34, "On ", 3);
+    }
+    else
+    {
+        memcpy(msg+34, "Off", 3);
+    }
+    
+    if(fanMode)
+    {
+        memcpy(msg+45, "On  ", 4);
+    }
+    else
+    {
+        memcpy(msg+45, "Auto", 4);
+    }
+
+    
+    if(temperature)
+    {
+        msg[6] = '0' + temperature/10;
+        msg[7] = '0' + temperature%10;
+        msg[8] = 'F';
+    }
+    else
+    {
+        memcpy(msg+6, "-- ", 3);
+    }
+    
+    if(d1 == -1)
+    {
+        msg[20] = '-';
+    }
+    else
+    {
+        msg[20] = '0' + d1;
+    }
+
+    if(d0 == -1)
+    {
+        msg[21] = '-';
+    }
+    else
+    {
+        msg[21] = '0' + d0;
+    }
+        
+    if(temp)
+    {
+        msg[22] = 'F';
+    }
+    
+    uoutSend(msg);
+}
+
 void nrfPrintReg()
 {
         int i;
@@ -187,6 +247,36 @@ void tempCancel()
 char tempProcess(char in)
 {
     char t = 0;
+    
+    if(in == 0x3F)
+    {
+        digMode = 1;
+        return 0x06;
+    }
+    else if(digMode)
+    {
+        if(in == 0x31)
+        {
+            enable = !enable;
+            if(enable)
+            {
+                temp = temperature;
+                tempCancel();
+            }
+        }
+        else if(in == 0x32)
+        {
+            fanMode = !fanMode;
+        }
+        else
+        {
+            digMode = 0;
+            return 0x05;
+        }
+        
+        digMode = 0;
+        return 0x06;
+    }
 
     if(in >= 0x30 && in <= 0x39)
     {
@@ -211,9 +301,9 @@ char tempProcess(char in)
             // Valid
             if(t >= MIN_TEMP && t <= MAX_TEMP)
             {
-                uoutSend("Temp: ");
-                uoutSendInt(t, 10);
-                uoutSend("\n\r");
+                //uoutSend("Temp: ");
+                //uoutSendInt(t, 10);
+                //uoutSend("\n\r");
                 
                 temp = t;
                 remoteTimeout = -1;
@@ -222,7 +312,7 @@ char tempProcess(char in)
             // Invalid
             else
             {
-                uoutSend("Invalid Temp.\n\r");
+                //uoutSend("Invalid Temp.\n\r");
                 tempCancel();
                 return 0x05;
             }

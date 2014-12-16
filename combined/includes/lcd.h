@@ -47,8 +47,8 @@ void LCD_init(void) {
 	delay_ms(100); //wait for 100 ms for LCD to power up
 	LCD_WriteCommand(0x38);//0011 1000
 	LCD_WriteCommand(0x06);//0000 0110
-	LCD_WriteCommand(0x0f);//0000 1111
-	LCD_WriteCommand(0x01);//0000 0001
+	//LCD_WriteCommand(0x0f);//0000 1111
+	//LCD_WriteCommand(0x01);//0000 0001
 	LCD_WriteCommand(0x0C);//0000 1100 hide cursor
 	delay_ms(10);						 
 }
